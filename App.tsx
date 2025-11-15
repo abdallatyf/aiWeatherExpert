@@ -1,7 +1,8 @@
+
 import React, { useState, useCallback, useRef, useEffect } from 'react';
 import { ImageFile } from './types';
 import { explainWeatherFromImage, WeatherAnalysis, StormTrackPoint, AnomalyStreak, generateVisualSummaryImage, StormSurgeForecast } from './services/geminiService';
-import { HISTORICAL_IMAGE_BASE64, HISTORICAL_IMAGE_MIMETYPE } from './historicalImage';
+import { HISTORICAL_IMAGE_URL } from './historicalImage';
 
 const base64ToFile = (base64: string, filename: string, mimeType: string): File => {
   const byteCharacters = atob(base64);
@@ -772,13 +773,33 @@ export default function App() {
     }
   }, [selectedImage, resetAnalysis]);
 
-  const handleUseSample = () => {
+  const handleUseSample = async () => {
     setIsHiResImageLoaded(false);
-    setSelectedImage({
-      file: new File([], "hurricane-ian.jpg", { type: HISTORICAL_IMAGE_MIMETYPE }),
-      base64: HISTORICAL_IMAGE_BASE64, mimeType: HISTORICAL_IMAGE_MIMETYPE,
-    });
     resetAnalysis();
+    try {
+      const response = await fetch(HISTORICAL_IMAGE_URL);
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      const blob = await response.blob();
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        const base64String = (reader.result as string).split(',')[1];
+        const file = new File([blob], "hurricane-ian.jpg", { type: blob.type });
+        setSelectedImage({
+          file: file,
+          base64: base64String,
+          mimeType: blob.type,
+        });
+      };
+      reader.onerror = () => {
+        setError("Failed to read sample image file.");
+      };
+      reader.readAsDataURL(blob);
+    } catch (e) {
+      console.error("Failed to fetch sample image:", e);
+      setError("Could not load the sample image. Please check your network connection.");
+    }
   };
 
   const generateComposedImageBase64 = useCallback(async (): Promise<string> => {
