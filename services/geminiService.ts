@@ -12,6 +12,11 @@ export interface AnomalyStreak {
   description: string;
 }
 
+export interface StormSurgeForecast {
+  surgeHeight: number;
+  affectedArea: {x: number; y: number}[];
+}
+
 export interface WeatherAnalysis {
   explanation: string;
   windDirection: string;
@@ -23,6 +28,7 @@ export interface WeatherAnalysis {
   uvIndex: number;
   stormTrack?: StormTrackPoint[];
   anomalyStreaks?: AnomalyStreak[];
+  stormSurge?: StormSurgeForecast;
 }
 
 /**
@@ -49,7 +55,7 @@ export async function explainWeatherFromImage(mimeType: string, imageData: strin
         };
 
         const textPart = {
-            text: "You are a meteorologist. Analyze the weather patterns in this satellite image. Provide a detailed explanation of cloud formations and overall conditions. Determine the primary wind direction, estimate wind speed in km/h, surface temperature in Celsius, chance of precipitation (%), humidity (%), and UV index. Identify the geographic location. Additionally, if there is a trackable storm system (like a hurricane), provide a predicted track for the next 48 hours as a 'stormTrack' array. Each point in the array should contain 'hours' (forecast hour, e.g., 12), 'intensity' (e.g., 'Category 1 Hurricane'), and its 'x' and 'y' coordinates as a percentage of the image dimensions (0-100). If there are any significant atmospheric anomalies like shear lines, dry air intrusions, or unusual convective bursts, identify them as 'anomalyStreaks'. Each streak should be a polygon represented by an array of 'points' (with 'x' and 'y' coordinates as percentages) and a brief 'description'. If no trackable storm or anomalies are present, return empty arrays for 'stormTrack' and 'anomalyStreaks'. If the image is not a weather map, set 'explanation' to 'ERROR: Not a weather map' and other fields to default values."
+            text: "You are a meteorologist. Analyze the weather patterns in this satellite image. Provide a detailed explanation of cloud formations and overall conditions. Determine the primary wind direction, estimate wind speed in km/h, surface temperature in Celsius, chance of precipitation (%), humidity (%), and UV index. Identify the geographic location. Additionally, if there is a trackable storm system (like a hurricane), provide a predicted track for the next 48 hours as a 'stormTrack' array. Each point in the array should contain 'hours' (forecast hour, e.g., 12), 'intensity' (e.g., 'Category 1 Hurricane'), and its 'x' and 'y' coordinates as a percentage of the image dimensions (0-100). If there are any significant atmospheric anomalies like shear lines, dry air intrusions, or unusual convective bursts, identify them as 'anomalyStreaks'. Each streak should be a polygon represented by an array of 'points' (with 'x' and 'y' coordinates as percentages) and a brief 'description'. If a major coastal storm or hurricane is detected, also provide a 'stormSurge' forecast, including 'surgeHeight' in meters and an 'affectedArea' polygon (an array of {x, y} percentage coordinates) outlining the threatened coastline. If no significant surge is expected, this field can be omitted. If no trackable storm or anomalies are present, return empty arrays for 'stormTrack' and 'anomalyStreaks'. If the image is not a weather map, set 'explanation' to 'ERROR: Not a weather map' and other fields to default values."
         };
         
         const responseSchema = {
@@ -123,6 +129,26 @@ export async function explainWeatherFromImage(mimeType: string, imageData: strin
                 },
                 required: ['points', 'description']
               }
+            },
+            stormSurge: {
+              type: Type.OBJECT,
+              description: "A forecast for storm surge if a major coastal storm is detected. Omitted if not applicable.",
+              properties: {
+                surgeHeight: { type: Type.NUMBER, description: "The estimated maximum storm surge height in meters." },
+                affectedArea: {
+                  type: Type.ARRAY,
+                  description: "A polygon representing the coastal area affected by the surge.",
+                  items: {
+                    type: Type.OBJECT,
+                    properties: {
+                      x: { type: Type.NUMBER, description: "X coordinate as a percentage of image width." },
+                      y: { type: Type.NUMBER, description: "Y coordinate as a percentage of image height." }
+                    },
+                    required: ['x', 'y']
+                  }
+                }
+              },
+              required: ['surgeHeight', 'affectedArea']
             }
           },
           required: ['explanation', 'windDirection', 'temperature', 'windSpeed', 'location', 'chanceOfPrecipitation', 'humidity', 'uvIndex', 'stormTrack', 'anomalyStreaks']
@@ -167,7 +193,10 @@ export async function generateVisualSummaryImage(
     if (analysis.anomalyStreaks && analysis.anomalyStreaks.length > 0) {
       prompt += `- The following anomalies are highlighted: ${analysis.anomalyStreaks.map(s => s.description).join(', ')}\n`;
     }
-    prompt += `Make the highlighted storm track and anomaly streaks appear more photorealistic and integrated into the satellite imagery, as if they are glowing energy patterns on the map. Return only the enhanced image.`;
+    if (analysis.stormSurge) {
+        prompt += `- A storm surge of ${analysis.stormSurge.surgeHeight}m is forecast for the highlighted coastal area.\n`;
+    }
+    prompt += `Make the highlighted storm track, anomaly streaks, and storm surge areas appear more photorealistic and integrated into the satellite imagery, as if they are glowing energy patterns on the map. Return only the enhanced image.`;
 
     const imagePart = {
       inlineData: {

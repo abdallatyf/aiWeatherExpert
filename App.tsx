@@ -1,9 +1,32 @@
 import React, { useState, useCallback, useRef, useEffect } from 'react';
 import { ImageFile } from './types';
-import { explainWeatherFromImage, WeatherAnalysis, StormTrackPoint, AnomalyStreak, generateVisualSummaryImage } from './services/geminiService';
+import { explainWeatherFromImage, WeatherAnalysis, StormTrackPoint, AnomalyStreak, generateVisualSummaryImage, StormSurgeForecast } from './services/geminiService';
 import { HISTORICAL_IMAGE_BASE64, HISTORICAL_IMAGE_MIMETYPE } from './historicalImage';
 
-const ShareModal = ({ isOpen, onClose, analysisData }: { isOpen: boolean, onClose: () => void, analysisData: WeatherAnalysis | null }) => {
+const base64ToFile = (base64: string, filename: string, mimeType: string): File => {
+  const byteCharacters = atob(base64);
+  const byteNumbers = new Array(byteCharacters.length);
+  for (let i = 0; i < byteCharacters.length; i++) {
+    byteNumbers[i] = byteCharacters.charCodeAt(i);
+  }
+  const byteArray = new Uint8Array(byteNumbers);
+  const blob = new Blob([byteArray], { type: mimeType });
+  return new File([blob], filename, { type: mimeType });
+};
+
+const ShareModal = ({ 
+  isOpen, 
+  onClose, 
+  analysisData, 
+  visualSummaryImage, 
+  originalImageFile 
+}: { 
+  isOpen: boolean, 
+  onClose: () => void, 
+  analysisData: WeatherAnalysis | null, 
+  visualSummaryImage: { base64: string, mimeType: string } | null,
+  originalImageFile: File | null,
+}) => {
   const [copyButtonText, setCopyButtonText] = useState('Copy');
   
   useEffect(() => {
@@ -15,13 +38,10 @@ const ShareModal = ({ isOpen, onClose, analysisData }: { isOpen: boolean, onClos
   if (!isOpen || !analysisData) return null;
 
   const { location, temperature, windDirection, windSpeed, explanation, chanceOfPrecipitation, humidity, uvIndex } = analysisData;
+  const hasVisualSummary = visualSummaryImage && originalImageFile;
 
   const summary = `Weather for ${location}: Temp: ${Math.round(temperature)}°C, Wind: ${Math.round(windSpeed)} km/h ${windDirection}, Precip: ${chanceOfPrecipitation}%, Humidity: ${humidity}%, UV: ${uvIndex}. Analysis: ${explanation.substring(0, 100)}...`;
   const encodedSummary = encodeURIComponent(summary);
-
-  const qrCodeUrl = `https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${encodedSummary}&bgcolor=374151&color=e5e7eb&qzone=1`;
-  const emailLink = `mailto:?subject=Weather Analysis for ${location}&body=${encodedSummary}`;
-  const twitterLink = `https://twitter.com/intent/tweet?text=${encodedSummary}`;
   const shareLink = `https://www.google.com/search?q=${encodedSummary}`;
   
   const handleCopyLink = () => {
@@ -32,6 +52,35 @@ const ShareModal = ({ isOpen, onClose, analysisData }: { isOpen: boolean, onClos
       console.error('Failed to copy link: ', err);
     });
   };
+
+  const handleDownloadImage = () => {
+    if (!visualSummaryImage) return;
+    const link = document.createElement('a');
+    link.href = `data:${visualSummaryImage.mimeType};base64,${visualSummaryImage.base64}`;
+    const newFilename = `visual_summary_${originalImageFile?.name.split('.')[0] || 'weather'}.png`;
+    link.download = newFilename;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+  
+  const handleShareImage = async () => {
+    if (!visualSummaryImage || !originalImageFile || !navigator.share) return;
+    
+    const newFilename = `visual_summary_${originalImageFile.name.split('.')[0]}.png`;
+    const fileToShare = base64ToFile(visualSummaryImage.base64, newFilename, visualSummaryImage.mimeType);
+
+    try {
+      await navigator.share({
+        files: [fileToShare],
+        title: `Weather Analysis for ${location}`,
+        text: summary,
+      });
+    } catch (error) {
+      console.error('Error sharing the image:', error);
+    }
+  };
+
 
   return (
     <div 
@@ -54,51 +103,70 @@ const ShareModal = ({ isOpen, onClose, analysisData }: { isOpen: boolean, onClos
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
           </svg>
         </button>
-        <h3 id="share-modal-title" className="text-2xl font-bold text-cyan-400 mb-4 text-center">Share Analysis</h3>
-        <div className="space-y-6">
-          <div className="flex flex-col items-center justify-center bg-gray-700 p-4 rounded-lg">
-            <img src={qrCodeUrl} alt="QR Code for weather analysis" className="rounded-md" />
-            <p className="mt-3 text-sm text-gray-300">Scan QR code to share</p>
-          </div>
-          <div>
-            <label htmlFor="share-link" className="block text-sm font-medium text-gray-300 mb-2 text-center">Or Copy Link</label>
-            <div className="flex gap-2">
-              <input
-                id="share-link"
-                type="text"
-                readOnly
-                value={shareLink}
-                className="w-full bg-gray-600 text-gray-200 border border-gray-500 rounded-md px-3 py-1.5 text-sm focus:ring-cyan-500 focus:border-cyan-500"
-                onClick={(e) => (e.target as HTMLInputElement).select()}
-              />
+        <h3 id="share-modal-title" className="text-2xl font-bold text-cyan-400 mb-4 text-center">
+          {hasVisualSummary ? 'Share Visual Summary' : 'Share Analysis'}
+        </h3>
+        {hasVisualSummary ? (
+          <div className="space-y-4 text-center">
+            <img 
+              src={`data:${visualSummaryImage.mimeType};base64,${visualSummaryImage.base64}`} 
+              alt="AI-generated visual summary" 
+              className="rounded-lg border-2 border-gray-600 max-h-64 w-auto mx-auto"
+            />
+            <p className="text-sm text-gray-400">Share this AI-enhanced image with your analysis baked in.</p>
+            <div className="flex flex-col gap-3 pt-2">
               <button
-                onClick={handleCopyLink}
-                className="px-4 py-1.5 text-sm font-semibold rounded-md shadow-sm transition-colors duration-200 bg-cyan-600 hover:bg-cyan-700 text-white w-24 text-center"
+                onClick={handleShareImage}
+                disabled={!navigator.share}
+                className="w-full inline-flex items-center justify-center px-4 py-2 text-sm font-semibold rounded-md shadow-sm transition-colors duration-200 bg-cyan-600 hover:bg-cyan-700 text-white disabled:bg-gray-500 disabled:cursor-not-allowed"
+                title={!navigator.share ? 'Web Share API not supported in your browser' : 'Share image using native dialog'}
               >
-                {copyButtonText}
+                Share Image
+              </button>
+              <button
+                onClick={handleDownloadImage}
+                className="w-full inline-flex items-center justify-center px-4 py-2 text-sm font-semibold rounded-md shadow-sm transition-colors duration-200 bg-gray-600 hover:bg-gray-700 text-white"
+              >
+                Download Image
               </button>
             </div>
           </div>
-
-          <hr className="border-gray-600" />
-          
-          <div className="flex justify-center items-center gap-6">
-            <a href={emailLink} target="_blank" rel="noopener noreferrer" className="text-gray-400 hover:text-white transition-colors" title="Share via Email">
-              <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8" viewBox="0 0 20 20" fill="currentColor">
-                <path d="M2.003 5.884L10 9.882l7.997-3.998A2 2 0 0016 4H4a2 2 0 00-1.997 1.884z" />
-                <path d="M18 8.118l-8 4-8-4V14a2 2 0 002 2h12a2 2 0 002-2V8.118z" />
-              </svg>
-            </a>
-            <a href={twitterLink} target="_blank" rel="noopener noreferrer" className="text-gray-400 hover:text-white transition-colors" title="Share on Twitter">
-               <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8" fill="currentColor" viewBox="0 0 24 24">
-                 <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z" />
-              </svg>
-            </a>
+        ) : (
+          <div className="space-y-6">
+            <div className="flex flex-col items-center justify-center bg-gray-700 p-4 rounded-lg">
+              <img src={`https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${encodedSummary}&bgcolor=374151&color=e5e7eb&qzone=1`} alt="QR Code for weather analysis" className="rounded-md" />
+              <p className="mt-3 text-sm text-gray-300">Scan QR code to share</p>
+            </div>
+            <div>
+              <label htmlFor="share-link" className="block text-sm font-medium text-gray-300 mb-2 text-center">Or Copy Link</label>
+              <div className="flex gap-2">
+                <input
+                  id="share-link"
+                  type="text"
+                  readOnly
+                  value={shareLink}
+                  className="w-full bg-gray-600 text-gray-200 border border-gray-500 rounded-md px-3 py-1.5 text-sm focus:ring-cyan-500 focus:border-cyan-500"
+                  onClick={(e) => (e.target as HTMLInputElement).select()}
+                />
+                <button
+                  onClick={handleCopyLink}
+                  className="px-4 py-1.5 text-sm font-semibold rounded-md shadow-sm transition-colors duration-200 bg-cyan-600 hover:bg-cyan-700 text-white w-24 text-center"
+                >
+                  {copyButtonText}
+                </button>
+              </div>
+            </div>
+            <hr className="border-gray-600" />
+            <div className="flex justify-center items-center gap-6">
+              <a href={`mailto:?subject=Weather Analysis for ${location}&body=${encodedSummary}`} target="_blank" rel="noopener noreferrer" className="text-gray-400 hover:text-white transition-colors" title="Share via Email">
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8" viewBox="0 0 20 20" fill="currentColor"><path d="M2.003 5.884L10 9.882l7.997-3.998A2 2 0 0016 4H4a2 2 0 00-1.997 1.884z" /><path d="M18 8.118l-8 4-8-4V14a2 2 0 002 2h12a2 2 0 002-2V8.118z" /></svg>
+              </a>
+              <a href={`https://twitter.com/intent/tweet?text=${encodedSummary}`} target="_blank" rel="noopener noreferrer" className="text-gray-400 hover:text-white transition-colors" title="Share on Twitter">
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8" fill="currentColor" viewBox="0 0 24 24"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z" /></svg>
+              </a>
+            </div>
           </div>
-          <p className="text-xs text-gray-500 text-center px-2">
-            Sharing includes a summary for: {location}, {Math.round(temperature)}°C, {Math.round(windSpeed)} km/h, {chanceOfPrecipitation}% precip.
-          </p>
-        </div>
+        )}
       </div>
        <style>{`
         @keyframes fade-in-scale {
@@ -297,6 +365,56 @@ const AnomalyStreaksDisplay = ({ streaks, dimensions }: { streaks: AnomalyStreak
   );
 };
 
+const StormSurgeDisplay = ({ surge, dimensions }: { surge: StormSurgeForecast, dimensions: { width: number, height: number } }) => {
+  if (!surge || !surge.affectedArea || surge.affectedArea.length === 0 || dimensions.width === 0) return null;
+
+  const pointsStr = surge.affectedArea.map(p => `${p.x / 100 * dimensions.width},${p.y / 100 * dimensions.height}`).join(' ');
+  
+  // Calculate centroid for text label placement
+  const centroid = surge.affectedArea.reduce((acc, p) => ({
+    x: acc.x + p.x / 100 * dimensions.width,
+    y: acc.y + p.y / 100 * dimensions.height
+  }), { x: 0, y: 0 });
+  centroid.x /= surge.affectedArea.length;
+  centroid.y /= surge.affectedArea.length;
+
+  return (
+    <>
+      <style>{`
+        @keyframes surge-pulse {
+          0% { opacity: 0.4; }
+          50% { opacity: 0.7; }
+          100% { opacity: 0.4; }
+        }
+        .surge-area {
+          animation: surge-pulse 4s ease-in-out infinite;
+        }
+      `}</style>
+      <svg className="absolute top-0 left-0 w-full h-full pointer-events-none" viewBox={`0 0 ${dimensions.width} ${dimensions.height}`}>
+        <polygon
+          points={pointsStr}
+          className="surge-area"
+          fill="rgba(220, 38, 38, 0.5)"
+          stroke="rgba(255, 100, 100, 0.8)"
+          strokeWidth="1.5"
+        >
+          <title>Storm Surge Warning</title>
+        </polygon>
+        <text
+          x={centroid.x}
+          y={centroid.y}
+          textAnchor="middle"
+          dominantBaseline="central"
+          className="fill-white font-bold text-lg"
+          style={{ paintOrder: 'stroke', stroke: 'black', strokeWidth: '2px', strokeLinejoin: 'round' }}
+        >
+          {surge.surgeHeight}m Surge
+        </text>
+      </svg>
+    </>
+  );
+};
+
 export default function App() {
   const [selectedImage, setSelectedImage] = useState<ImageFile | null>(null);
   const [analysis, setAnalysis] = useState<WeatherAnalysis | null>(null);
@@ -434,6 +552,21 @@ export default function App() {
             });
         }
 
+        if (analysis.stormSurge && analysis.stormSurge.affectedArea.length > 0) {
+            const surgePoints = analysis.stormSurge.affectedArea.map(p => `${p.x / 100 * width},${p.y / 100 * height}`).join(' ');
+            overlaysSVG += `<polygon points="${surgePoints}" fill="rgba(220, 38, 38, 0.4)" stroke="rgba(255, 100, 100, 0.8)" stroke-width="1.5" />`;
+
+            const centroid = analysis.stormSurge.affectedArea.reduce((acc, p) => ({
+                x: acc.x + p.x / 100 * width,
+                y: acc.y + p.y / 100 * height
+            }), { x: 0, y: 0 });
+            centroid.x /= analysis.stormSurge.affectedArea.length;
+            centroid.y /= analysis.stormSurge.affectedArea.length;
+
+            overlaysSVG += `<text x="${centroid.x}" y="${centroid.y}" text-anchor="middle" dominant-baseline="central" fill="white" font-family="sans-serif" font-size="16" font-weight="bold" style="paint-order: stroke; stroke: black; stroke-width: 2px; stroke-linejoin: round;">${analysis.stormSurge.surgeHeight}m Surge</text>`;
+        }
+
+
         const fullSVG = `
             <svg width="${width}" height="${height}" xmlns="http://www.w3.org/2000/svg">
                 <image href="${`data:${selectedImage.mimeType};base64,${selectedImage.base64}`}" x="0" y="0" width="${width}" height="${height}" />
@@ -484,6 +617,8 @@ export default function App() {
   const triggerFileSelect = () => fileInputRef.current?.click();
   const hasStormTrack = analysis?.stormTrack && analysis.stormTrack.length > 0;
   const hasAnomalies = analysis?.anomalyStreaks && analysis.anomalyStreaks.length > 0;
+  const hasStormSurge = analysis?.stormSurge && analysis.stormSurge.affectedArea.length > 0;
+  const hasOverlays = hasStormTrack || hasAnomalies || hasStormSurge;
 
   return (
     <div className="min-h-screen bg-gray-900 text-white flex flex-col items-center p-4 sm:p-6 lg:p-8">
@@ -519,15 +654,16 @@ export default function App() {
                   />
                   {showOriginal && hasStormTrack && <StormTrackDisplay track={analysis.stormTrack!} dimensions={imageDimensions} />}
                   {showOriginal && hasAnomalies && <AnomalyStreaksDisplay streaks={analysis.anomalyStreaks!} dimensions={imageDimensions} />}
+                  {showOriginal && hasStormSurge && <StormSurgeDisplay surge={analysis.stormSurge!} dimensions={imageDimensions} />}
                 </div>
 
                 {analysis && (
                     <div className="flex flex-col sm:flex-row gap-2 mb-4">
                         <button
                             onClick={handleGenerateVisualSummary}
-                            disabled={isLoading || isGeneratingVisual || (!hasStormTrack && !hasAnomalies)}
+                            disabled={isLoading || isGeneratingVisual || !hasOverlays}
                             className="flex-1 inline-flex items-center justify-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-purple-600 hover:bg-purple-700 disabled:bg-gray-500 disabled:cursor-not-allowed"
-                            title={(!hasStormTrack && !hasAnomalies) ? "No overlays to generate a summary from" : "Use AI to generate an enhanced visual"}
+                            title={!hasOverlays ? "No overlays to generate a summary from" : "Use AI to generate an enhanced visual"}
                         >
                             {isGeneratingVisual ? 'Generating...' : 'Generate Visual Summary'}
                         </button>
@@ -601,7 +737,13 @@ export default function App() {
           </div>
         </main>
       </div>
-      <ShareModal isOpen={isShareModalOpen} onClose={() => setIsShareModalOpen(false)} analysisData={analysis} />
+      <ShareModal 
+        isOpen={isShareModalOpen} 
+        onClose={() => setIsShareModalOpen(false)} 
+        analysisData={analysis}
+        visualSummaryImage={visualSummary}
+        originalImageFile={selectedImage?.file || null}
+      />
     </div>
   );
 }
