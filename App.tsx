@@ -1,6 +1,6 @@
 import React, { useState, useCallback, useRef, useEffect } from 'react';
 import { ImageFile } from './types';
-import { explainWeatherFromImage, WeatherAnalysis, StormTrackPoint, AnomalyStreak, generateVisualSummaryImage, StormSurgeForecast, fetchLiveWeatherData, LiveWeatherData } from './services/geminiService';
+import { explainWeatherFromImage, WeatherAnalysis, StormTrackPoint, AnomalyStreak, generateVisualSummaryImage, StormSurgeForecast, fetchLiveWeatherData, LiveWeatherData, Isobar } from './services/geminiService';
 import { HISTORICAL_IMAGE_URL } from './historicalImage';
 
 const base64ToFile = (base64: string, filename: string, mimeType: string): File => {
@@ -718,77 +718,180 @@ const StormSurgeDisplay = ({ surge, dimensions }: { surge: StormSurgeForecast, d
   );
 };
 
-const WindDirectionOverlay = ({ direction, dimensions }: { direction: string; dimensions: { width: number, height: number } }) => {
-  if (!direction || dimensions.width === 0) return null;
+const WindBarbOverlay = ({ direction, speed, dimensions }: { direction: string; speed: number; dimensions: { width: number, height: number } }) => {
+  if (!direction || speed < 0 || dimensions.width === 0) return null;
 
-  const getRotationForDirection = (dir: string): number => {
+  const getRotationForBarb = (dir: string): number => {
     const normalizedDir = dir.toUpperCase().replace(/[^A-Z]/g, '');
-    // Wind direction is "from", so an arrow showing flow should be opposite.
-    // N wind is from North, flows South. Arrow points South (180 deg from North).
+    // Barb staff points in the direction the wind is FROM.
     const directionMap: { [key: string]: number } = {
-      'N': 180, 'NE': 225, 'E': 270, 'SE': 315,
-      'S': 0, 'SW': 45, 'W': 90, 'NW': 135,
+      'N': 0, 'NE': 45, 'E': 90, 'SE': 135,
+      'S': 180, 'SW': 225, 'W': 270, 'NW': 315,
     };
     for (const key in directionMap) {
-      if (normalizedDir.startsWith(key)) {
-        return directionMap[key];
-      }
+      if (normalizedDir.startsWith(key)) return directionMap[key];
     }
-    return 0; // Default to S wind (arrow points North)
+    return 0;
+  };
+
+  const rotation = getRotationForBarb(direction);
+  // 1 knot = 1.852 km/h
+  const speedInKnots = Math.round(speed / 1.852);
+
+  const Barb = ({ knots, x, y, rotation }: { knots: number, x: number, y: number, rotation: number }) => {
+    const staffLength = 25;
+    const barbLength = 10;
+    const halfBarbLength = 5;
+    const barbSpacing = 4;
+    const pennantHeight = barbSpacing;
+
+    // Calm wind (circle)
+    if (knots < 3) {
+      return (
+        <g transform={`translate(${x} ${y})`}>
+          <circle r="4" strokeWidth="1.5" stroke="white" fill="none" />
+        </g>
+      );
+    }
+    
+    const elements = [];
+    let remainingKnots = knots;
+    let currentY = -staffLength;
+
+    const numPennants = Math.floor(remainingKnots / 50);
+    remainingKnots -= numPennants * 50;
+    const numFullBarbs = Math.floor(remainingKnots / 10);
+    remainingKnots -= numFullBarbs * 10;
+    const numHalfBarbs = remainingKnots >= 5 ? 1 : 0;
+    
+    // Draw from the tip of the staff inwards
+    for (let i = 0; i < numPennants; i++) {
+        elements.push(<polygon key={`p${i}`} points={`0,${currentY} ${-barbLength},${currentY + pennantHeight / 2} 0,${currentY + pennantHeight}`} fill="white" />);
+        currentY += pennantHeight + 2;
+    }
+
+    if (numPennants > 0 && (numFullBarbs > 0 || numHalfBarbs > 0)) {
+        currentY += barbSpacing / 2;
+    }
+
+    for (let i = 0; i < numFullBarbs; i++) {
+        elements.push(<line key={`f${i}`} x1="0" y1={currentY} x2={-barbLength} y2={currentY - barbSpacing} />);
+        currentY += barbSpacing;
+    }
+
+    if (numHalfBarbs > 0) {
+        elements.push(<line key="h1" x1="0" y1={currentY} x2={-halfBarbLength} y2={currentY - barbSpacing / 2} />);
+    }
+
+    return (
+      <g transform={`translate(${x} ${y}) rotate(${rotation})`}>
+        <line x1="0" y1="0" x2="0" y2={-staffLength} stroke="white" strokeWidth="1.5" />
+        <g stroke="white" strokeWidth="1.5">
+           {elements}
+        </g>
+      </g>
+    );
   };
   
-  const rotation = getRotationForDirection(direction);
-
   const gridRows = 4;
   const gridCols = 6;
-  const arrows = [];
+  const barbs = [];
   
-  // Arrow path pointing North (up)
-  const arrowPath = "M0,-8 L6,6 L0,3 L-6,6 z";
-
   for (let i = 0; i < gridRows; i++) {
     for (let j = 0; j < gridCols; j++) {
       const x = (j + 0.5) * dimensions.width / gridCols;
       const y = (i + 0.5) * dimensions.height / gridRows;
-      arrows.push({ x, y });
+      barbs.push({ x, y });
     }
   }
 
   return (
     <>
       <style>{`
-        @keyframes fade-in-arrows {
+        @keyframes fade-in-barbs {
           from { opacity: 0; }
           to { opacity: 1; }
         }
-        .wind-arrow-group {
-          animation: fade-in-arrows 0.5s ease-out forwards;
+        .wind-barb-group {
+          animation: fade-in-barbs 0.5s ease-out forwards;
+          filter: drop-shadow(0 0 2px rgba(0,0,0,0.7));
         }
       `}</style>
       <svg className="absolute top-0 left-0 w-full h-full pointer-events-none" viewBox={`0 0 ${dimensions.width} ${dimensions.height}`}>
-        <defs>
-          <path 
-            id="wind-arrow" 
-            d={arrowPath} 
-            fill="rgba(255, 255, 255, 0.9)" 
-            stroke="rgba(0, 0, 0, 0.7)" 
-            strokeWidth="1" 
-            strokeLinejoin="round"
-          />
-        </defs>
-        <g className="wind-arrow-group">
-          {arrows.map((arrow, index) => (
-            <use
-              key={index}
-              href="#wind-arrow"
-              transform={`translate(${arrow.x} ${arrow.y}) rotate(${rotation}) scale(1.5)`}
-            />
-          ))}
+        <g className="wind-barb-group">
+            {barbs.map((barb, index) => (
+                <Barb key={index} x={barb.x} y={barb.y} knots={speedInKnots} rotation={rotation} />
+            ))}
         </g>
       </svg>
     </>
   );
 };
+
+const IsobarDisplay = ({ isobars, dimensions }: { isobars: Isobar[], dimensions: { width: number, height: number } }) => {
+  if (!isobars || isobars.length === 0 || dimensions.width === 0) return null;
+
+  // Convert the SVG path from a 100x100 viewbox to the actual image dimensions
+  const scalePath = (path: string, width: number, height: number) => {
+    return path.replace(/([0-9.]+)/g, (match, numberStr) => {
+      // This is a simplification; it assumes alternating x and y coordinates in commands like M, L, C etc.
+      // A more robust solution would parse the SVG path commands properly.
+      // For now, we scale every number, which works for paths generated as absolute coordinates.
+      // The AI is asked for percentage based coordinates, which this handles.
+      // Let's assume the path is like "M x1,y1 C x2,y2 x3,y3 x4,y4"
+      // A regex might be better. Let's try to parse it.
+      const commands = path.split(/(?=[MmLlHhVvCcSsQqTtAaZz])/);
+      return commands.map(command => {
+        const op = command.charAt(0);
+        const args = command.substring(1).trim().split(/[\s,]+/).map(parseFloat);
+        const scaledArgs = args.map((arg, i) => {
+          if (isNaN(arg)) return '';
+          // Scale X coordinates (even indices) by width, Y (odd indices) by height
+          return (i % 2 === 0) ? (arg / 100 * width).toFixed(2) : (arg / 100 * height).toFixed(2);
+        });
+        return op + scaledArgs.join(' ');
+      }).join('');
+    });
+  };
+
+  return (
+    <svg className="absolute top-0 left-0 w-full h-full pointer-events-none" viewBox={`0 0 ${dimensions.width} ${dimensions.height}`}>
+      <style>{`
+        .isobar-label {
+            font-size: 10px;
+            font-weight: bold;
+            paint-order: stroke;
+            stroke-width: 2px;
+            stroke-linejoin: round;
+        }
+        .isobar-path {
+          filter: drop-shadow(0 0 1px rgba(0,0,0,0.6));
+        }
+      `}</style>
+      {isobars.map((isobar, index) => (
+        <g key={index}>
+          <path
+            d={scalePath(isobar.path, dimensions.width, dimensions.height)}
+            className="isobar-path"
+            fill="none"
+            stroke="rgba(230, 230, 230, 0.9)"
+            strokeWidth="1.5"
+          />
+          <text
+            x={(isobar.labelPosition.x / 100) * dimensions.width}
+            y={(isobar.labelPosition.y / 100) * dimensions.height}
+            className="isobar-label fill-white dark:fill-gray-100 stroke-gray-900/80 dark:stroke-black/80"
+            textAnchor="middle"
+            dominantBaseline="central"
+          >
+            {isobar.pressure}
+          </text>
+        </g>
+      ))}
+    </svg>
+  );
+};
+
 
 const Tooltip = ({ visible, content, x, y }: { visible: boolean; content: string; x: number; y: number }) => {
   if (!visible) return null;
@@ -912,6 +1015,7 @@ export default function App() {
   const [forecastHour, setForecastHour] = useState<number>(0);
   const [showHeatmap, setShowHeatmap] = useState<boolean>(false);
   const [showWind, setShowWind] = useState<boolean>(false);
+  const [showIsobars, setShowIsobars] = useState<boolean>(false);
   const [tooltip, setTooltip] = useState<{ visible: boolean; content: string; x: number; y: number }>({ visible: false, content: '', x: 0, y: 0 });
 
   const [includeStormTrack, setIncludeStormTrack] = useState<boolean>(true);
@@ -1002,6 +1106,7 @@ export default function App() {
     setForecastHour(0);
     setShowHeatmap(false);
     setShowWind(false);
+    setShowIsobars(false);
     setIncludeStormTrack(true);
     setIncludeAnomalies(true);
     setIncludeStormSurge(true);
@@ -1302,6 +1407,7 @@ export default function App() {
   const hasStormTrack = analysis?.stormTrack && analysis.stormTrack.length > 0;
   const hasAnomalies = analysis?.anomalyStreaks && analysis.anomalyStreaks.length > 0;
   const hasStormSurge = analysis?.stormSurge && analysis.stormSurge.affectedArea.length > 0;
+  const hasIsobars = analysis?.isobars && analysis.isobars.length > 0;
   const hasOverlays = hasStormTrack || hasAnomalies || hasStormSurge;
 
   const getDisplayImage = () => {
@@ -1400,7 +1506,10 @@ export default function App() {
                     <TemperatureHeatmapDisplay temperature={analysis.temperature} />
                   )}
                   {viewMode === 'original' && showWind && analysis && (
-                    <WindDirectionOverlay direction={analysis.windDirection} dimensions={imageDimensions} />
+                    <WindBarbOverlay direction={analysis.windDirection} speed={analysis.windSpeed} dimensions={imageDimensions} />
+                  )}
+                  {viewMode === 'original' && showIsobars && hasIsobars && (
+                    <IsobarDisplay isobars={analysis.isobars!} dimensions={imageDimensions} />
                   )}
                 </div>
 
@@ -1474,7 +1583,7 @@ export default function App() {
                 )}
 
                 {analysis && (
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-4">
+                    <div className="grid grid-cols-2 sm:grid-cols-2 gap-2 mt-4">
                         <button
                             onClick={handleGenerateOverlayImage}
                             disabled={isLoading || isGeneratingOverlay || isGeneratingVisual || !hasOverlays}
@@ -1493,15 +1602,22 @@ export default function App() {
                         </button>
                         <button
                           onClick={() => setShowHeatmap(!showHeatmap)}
-                          className={`w-full inline-flex items-center justify-center px-4 py-2 border text-sm font-medium rounded-md shadow-sm transition-colors ${showHeatmap ? 'bg-orange-500 hover:bg-orange-600 dark:bg-orange-600 dark:hover:bg-orange-700 border-transparent text-white' : 'bg-gray-200 hover:bg-gray-300 dark:bg-gray-700 dark:hover:bg-gray-600 border-gray-300 dark:border-gray-600 text-gray-800 dark:text-gray-300'}`}
+                          className={`w-full inline-flex items-center justify-center px-4 py-2 border text-sm font-medium rounded-md shadow-sm transition-colors ${showHeatmap ? 'bg-orange-500 hover:bg-orange-600 dark:bg-orange-600 dark:hover:bg-orange-700 border-transparent text-white ring-2 ring-orange-400 ring-offset-2 ring-offset-white dark:ring-offset-gray-800' : 'bg-gray-200 hover:bg-gray-300 dark:bg-gray-700 dark:hover:bg-gray-600 border-gray-300 dark:border-gray-600 text-gray-800 dark:text-gray-300'}`}
                         >
-                          {showHeatmap ? 'Hide' : 'Show'} Temperature Heatmap
+                          {showHeatmap ? 'Hide' : 'Show'} Heatmap
                         </button>
                          <button
                           onClick={() => setShowWind(!showWind)}
-                          className={`w-full inline-flex items-center justify-center px-4 py-2 border text-sm font-medium rounded-md shadow-sm transition-colors ${showWind ? 'bg-sky-500 hover:bg-sky-600 dark:bg-sky-600 dark:hover:bg-sky-700 border-transparent text-white' : 'bg-gray-200 hover:bg-gray-300 dark:bg-gray-700 dark:hover:bg-gray-600 border-gray-300 dark:border-gray-600 text-gray-800 dark:text-gray-300'}`}
+                          className={`w-full inline-flex items-center justify-center px-4 py-2 border text-sm font-medium rounded-md shadow-sm transition-colors ${showWind ? 'bg-sky-500 hover:bg-sky-600 dark:bg-sky-600 dark:hover:bg-sky-700 border-transparent text-white ring-2 ring-sky-400 ring-offset-2 ring-offset-white dark:ring-offset-gray-800' : 'bg-gray-200 hover:bg-gray-300 dark:bg-gray-700 dark:hover:bg-gray-600 border-gray-300 dark:border-gray-600 text-gray-800 dark:text-gray-300'}`}
                         >
-                          {showWind ? 'Hide' : 'Show'} Wind Direction
+                          {showWind ? 'Hide' : 'Show'} Wind Barbs
+                        </button>
+                         <button
+                          onClick={() => setShowIsobars(!showIsobars)}
+                          disabled={!hasIsobars}
+                          className={`w-full col-span-2 inline-flex items-center justify-center px-4 py-2 border text-sm font-medium rounded-md shadow-sm transition-colors disabled:bg-gray-200 dark:disabled:bg-gray-700 disabled:text-gray-400 disabled:cursor-not-allowed ${showIsobars ? 'bg-gray-800 hover:bg-gray-900 dark:bg-gray-200 dark:hover:bg-gray-300 border-transparent text-white dark:text-gray-800 ring-2 ring-gray-500 ring-offset-2 ring-offset-white dark:ring-offset-gray-800' : 'bg-gray-200 hover:bg-gray-300 dark:bg-gray-700 dark:hover:bg-gray-600 border-gray-300 dark:border-gray-600 text-gray-800 dark:text-gray-300'}`}
+                        >
+                          {showIsobars ? 'Hide' : 'Show'} Isobars
                         </button>
                     </div>
                 )}

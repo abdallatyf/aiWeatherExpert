@@ -17,6 +17,12 @@ export interface StormSurgeForecast {
   affectedArea: {x: number; y: number}[];
 }
 
+export interface Isobar {
+  pressure: number;
+  path: string;
+  labelPosition: { x: number; y: number };
+}
+
 export interface WeatherAnalysis {
   explanation: string;
   windDirection: string;
@@ -31,6 +37,7 @@ export interface WeatherAnalysis {
   stormTrack?: StormTrackPoint[];
   anomalyStreaks?: AnomalyStreak[];
   stormSurge?: StormSurgeForecast;
+  isobars?: Isobar[];
 }
 
 export interface LiveWeatherData {
@@ -62,7 +69,7 @@ export async function explainWeatherFromImage(mimeType: string, imageData: strin
         };
 
         const textPart = {
-            text: "You are a meteorologist. Analyze the weather patterns in this satellite image. Provide a detailed explanation of cloud formations and overall conditions. Determine the primary wind direction, estimate wind speed in km/h, surface temperature in Celsius, chance of precipitation (%), humidity (%), and UV index. Identify the geographic location. Estimate the latitude and longitude for the center of the main weather feature ('centerCoordinates') and suggest an appropriate Google Maps zoom level ('zoomLevel', 4-12) to view it. Additionally, if there is a trackable storm system (like a hurricane), provide a predicted track for the next 48 hours as a 'stormTrack' array. Each point in the array should contain 'hours' (forecast hour, e.g., 12), 'intensity' (e.g., 'Category 1 Hurricane'), and its 'x' and 'y' coordinates as a percentage of the image dimensions (0-100). If there are any significant atmospheric anomalies like shear lines, dry air intrusions, or unusual convective bursts, identify them as 'anomalyStreaks'. Also, look for smaller-scale phenomena like potential microbursts or localized downdrafts, describing them with more granular detail. Each streak should be a polygon represented by an array of 'points' (with 'x' and 'y' coordinates as percentages) and a brief 'description'. If a major coastal storm or hurricane is detected, also provide a 'stormSurge' forecast, including 'surgeHeight' in meters and an 'affectedArea' polygon (an array of {x, y} percentage coordinates) outlining the threatened coastline. If no significant surge is expected, this field can be omitted. If no trackable storm or anomalies are present, return empty arrays for 'stormTrack' and 'anomalyStreaks'. If the image is not a weather map, set 'explanation' to 'ERROR: Not a weather map' and other fields to default values."
+            text: "You are a meteorologist. Analyze the weather patterns in this satellite image. Provide a detailed explanation of cloud formations and overall conditions. Determine the primary wind direction, estimate wind speed in km/h, surface temperature in Celsius, chance of precipitation (%), humidity (%), and UV index. Identify the geographic location. Estimate the latitude and longitude for the center of the main weather feature ('centerCoordinates') and suggest an appropriate Google Maps zoom level ('zoomLevel', 4-12) to view it. Additionally, if there is a trackable storm system (like a hurricane), provide a predicted track for the next 48 hours as a 'stormTrack' array. Each point in the array should contain 'hours' (forecast hour, e.g., 12), 'intensity' (e.g., 'Category 1 Hurricane'), and its 'x' and 'y' coordinates as a percentage of the image dimensions (0-100). If there are any significant atmospheric anomalies like shear lines, dry air intrusions, or unusual convective bursts, identify them as 'anomalyStreaks'. Also, look for smaller-scale phenomena like potential microbursts or localized downdrafts, describing them with more granular detail. Each streak should be a polygon represented by an array of 'points' (with 'x' and 'y' coordinates as percentages) and a brief 'description'. If a major coastal storm or hurricane is detected, also provide a 'stormSurge' forecast, including 'surgeHeight' in meters and an 'affectedArea' polygon (an array of {x, y} percentage coordinates) outlining the threatened coastline. Analyze the atmospheric pressure and generate a set of isobars (lines of constant pressure) as an 'isobars' array at standard 4mb intervals (e.g., 1000, 1004, 1008). Each element should be an object with 'pressure' (millibars), 'path' (an SVG path data string where coordinates are percentages of image dimensions), and 'labelPosition' (an {x, y} percentage coordinate for placing a text label). If no significant surge is expected, this field can be omitted. If no trackable storm, anomalies, or discernible pressure patterns are present, return empty arrays for 'stormTrack', 'anomalyStreaks', and 'isobars'. If the image is not a weather map, set 'explanation' to 'ERROR: Not a weather map' and other fields to default values."
         };
         
         const responseSchema = {
@@ -168,9 +175,30 @@ export async function explainWeatherFromImage(mimeType: string, imageData: strin
                 }
               },
               required: ['surgeHeight', 'affectedArea']
+            },
+            isobars: {
+              type: Type.ARRAY,
+              description: "An array of isobars (lines of constant pressure). Empty if not detected.",
+              items: {
+                type: Type.OBJECT,
+                properties: {
+                  pressure: { type: Type.NUMBER, description: "Pressure in millibars (e.g., 1004)." },
+                  path: { type: Type.STRING, description: "SVG path data string with coordinates as percentages of image dimensions." },
+                  labelPosition: {
+                    type: Type.OBJECT,
+                    description: "An {x, y} coordinate for the label as percentages.",
+                    properties: {
+                      x: { type: Type.NUMBER },
+                      y: { type: Type.NUMBER }
+                    },
+                    required: ['x', 'y']
+                  }
+                },
+                required: ['pressure', 'path', 'labelPosition']
+              }
             }
           },
-          required: ['explanation', 'windDirection', 'temperature', 'windSpeed', 'location', 'chanceOfPrecipitation', 'humidity', 'uvIndex', 'stormTrack', 'anomalyStreaks']
+          required: ['explanation', 'windDirection', 'temperature', 'windSpeed', 'location', 'chanceOfPrecipitation', 'humidity', 'uvIndex', 'stormTrack', 'anomalyStreaks', 'isobars']
         };
 
         const response = await ai.models.generateContent({
