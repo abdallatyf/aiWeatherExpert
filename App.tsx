@@ -227,12 +227,6 @@ const ShareModal = ({
               >
                 Download Image
               </button>
-              <button
-                onClick={handleDownloadVisualSummary}
-                className="w-full inline-flex items-center justify-center px-4 py-2 text-sm font-semibold rounded-md shadow-sm transition-colors duration-200 bg-gray-600 hover:bg-gray-700 text-white"
-              >
-                Save
-              </button>
             </div>
           </div>
         )}
@@ -780,6 +774,24 @@ export default function App() {
               ctx.lineWidth = 2;
               ctx.fill();
               ctx.stroke();
+              
+              if (streak.points.length > 0) {
+                const centroid = streak.points.reduce((acc, p) => ({
+                  x: acc.x + p.x / 100 * width,
+                  y: acc.y + p.y / 100 * height
+                }), { x: 0, y: 0 });
+                centroid.x /= streak.points.length;
+                centroid.y /= streak.points.length;
+
+                ctx.font = 'bold 14px sans-serif';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.strokeStyle = 'black';
+                ctx.lineWidth = 3;
+                ctx.strokeText(streak.description, centroid.x, centroid.y);
+                ctx.fillStyle = 'white';
+                ctx.fillText(streak.description, centroid.x, centroid.y);
+              }
             });
           }
 

@@ -38,13 +38,7 @@ export interface WeatherAnalysis {
  * @returns A promise that resolves to an object containing the weather explanation and various data points.
  */
 export async function explainWeatherFromImage(mimeType: string, imageData: string): Promise<WeatherAnalysis> {
-    const API_KEY = "AIzaSyACjqYWF14Uc1ucaG3FTLhhNdhPS89eb0s";
-
-    if (!API_KEY) {
-        throw new Error("API_KEY environment variable not set. Please set it up.");
-    }
-
-    const ai = new GoogleGenAI({ apiKey: API_KEY });
+    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
     
     try {
         const imagePart = {
@@ -180,10 +174,7 @@ export async function generateVisualSummaryImage(
   mimeType: string,
   analysis: WeatherAnalysis,
 ): Promise<string> {
-    const API_KEY = "AIzaSyACjqYWF14Uc1ucaG3FTLhhNdhPS89eb0s";
-    if (!API_KEY) throw new Error("API_KEY environment variable not set.");
-
-    const ai = new GoogleGenAI({ apiKey: API_KEY });
+    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
     let prompt = `Reflect and enhance this weather visualization. The analysis provides the following context:\n- Explanation: ${analysis.explanation.substring(0, 200)}...\n`;
 
@@ -196,7 +187,7 @@ export async function generateVisualSummaryImage(
     if (analysis.stormSurge) {
         prompt += `- A storm surge of ${analysis.stormSurge.surgeHeight}m is forecast for the highlighted coastal area.\n`;
     }
-    prompt += `Make the highlighted storm track, anomaly streaks, and storm surge areas appear more photorealistic and integrated into the satellite imagery, as if they are glowing energy patterns on the map. For each anomaly streak, embed its description as a clean, readable text overlay near its corresponding highlighted area. Return only the enhanced image.`;
+    prompt += `Make the highlighted storm track, anomaly streaks, storm surge areas, and text labels appear more photorealistic and integrated into the satellite imagery, as if they are glowing energy patterns on the map. Enhance the readability of the text overlays. Return only the enhanced image.`;
 
     const imagePart = {
       inlineData: {
