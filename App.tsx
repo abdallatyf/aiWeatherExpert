@@ -19,16 +19,18 @@ const ShareModal = ({
   onClose, 
   analysisData, 
   visualSummaryImage, 
+  composedOverlayImage,
   selectedImage
 }: { 
   isOpen: boolean, 
   onClose: () => void, 
   analysisData: WeatherAnalysis | null, 
   visualSummaryImage: { base64: string, mimeType: string } | null,
+  composedOverlayImage: { base64: string, mimeType: string } | null,
   selectedImage: ImageFile | null,
 }) => {
   const [copyButtonText, setCopyButtonText] = useState('Copy');
-  const [shareMode, setShareMode] = useState<'analysis' | 'original' | 'visual'>('analysis');
+  const [shareMode, setShareMode] = useState<'analysis' | 'original' | 'overlay' | 'visual'>('analysis');
   
   useEffect(() => {
     if (isOpen) {
@@ -36,11 +38,13 @@ const ShareModal = ({
       // Set a smart default share mode
       if (visualSummaryImage) {
         setShareMode('visual');
+      } else if (composedOverlayImage) {
+        setShareMode('overlay');
       } else {
         setShareMode('analysis');
       }
     }
-  }, [isOpen, visualSummaryImage]);
+  }, [isOpen, visualSummaryImage, composedOverlayImage]);
 
   if (!isOpen || !analysisData) return null;
 
@@ -86,6 +90,34 @@ const ShareModal = ({
       console.error('Error sharing the visual summary:', error);
     }
   };
+  
+  const handleDownloadComposedImage = () => {
+    if (!composedOverlayImage) return;
+    const link = document.createElement('a');
+    link.href = `data:${composedOverlayImage.mimeType};base64,${composedOverlayImage.base64}`;
+    const newFilename = `overlay_${selectedImage?.file.name.split('.')[0] || 'weather'}.png`;
+    link.download = newFilename;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  const handleShareComposedImage = async () => {
+    if (!composedOverlayImage || !selectedImage || !navigator.share) return;
+    
+    const newFilename = `overlay_${selectedImage.file.name.split('.')[0]}.png`;
+    const fileToShare = base64ToFile(composedOverlayImage.base64, newFilename, composedOverlayImage.mimeType);
+
+    try {
+      await navigator.share({
+        files: [fileToShare],
+        title: `Weather Overlay for ${location}`,
+        text: summaryText,
+      });
+    } catch (error) {
+      console.error('Error sharing the overlay image:', error);
+    }
+  };
 
   const handleDownloadOriginalImage = () => {
     if (!selectedImage) return;
@@ -111,7 +143,7 @@ const ShareModal = ({
     }
   };
 
-  const getTabClass = (mode: 'analysis' | 'original' | 'visual') => {
+  const getTabClass = (mode: 'analysis' | 'original' | 'overlay' | 'visual') => {
     return shareMode === mode
       ? 'border-cyan-400 text-cyan-400'
       : 'border-transparent text-gray-400 hover:text-white hover:border-gray-500';
@@ -143,7 +175,7 @@ const ShareModal = ({
         </h3>
         
         <div className="border-b border-gray-700 mb-4">
-            <nav className="-mb-px flex justify-center space-x-6" aria-label="Tabs">
+            <nav className="-mb-px flex justify-center space-x-4" aria-label="Tabs">
                 <button
                     onClick={() => setShareMode('analysis')}
                     className={`whitespace-nowrap py-2 px-1 border-b-2 font-medium text-sm transition-colors ${getTabClass('analysis')}`}
@@ -155,14 +187,21 @@ const ShareModal = ({
                     className={`whitespace-nowrap py-2 px-1 border-b-2 font-medium text-sm transition-colors ${getTabClass('original')}`}
                     disabled={!selectedImage}
                 >
-                    Original Image
+                    Original
+                </button>
+                 <button
+                    onClick={() => setShareMode('overlay')}
+                    className={`whitespace-nowrap py-2 px-1 border-b-2 font-medium text-sm transition-colors ${getTabClass('overlay')} disabled:text-gray-600 disabled:cursor-not-allowed disabled:border-transparent`}
+                    disabled={!composedOverlayImage}
+                >
+                    Overlay
                 </button>
                 <button
                     onClick={() => setShareMode('visual')}
                     className={`whitespace-nowrap py-2 px-1 border-b-2 font-medium text-sm transition-colors ${getTabClass('visual')} disabled:text-gray-600 disabled:cursor-not-allowed disabled:border-transparent`}
                     disabled={!visualSummaryImage}
                 >
-                    Visual Summary
+                    AI Summary
                 </button>
             </nav>
         </div>
@@ -200,6 +239,33 @@ const ShareModal = ({
               <a href={`https://twitter.com/intent/tweet?text=${encodedSummary}`} target="_blank" rel="noopener noreferrer" className="text-gray-400 hover:text-white transition-colors" title="Share on Twitter">
                 <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8" fill="currentColor" viewBox="0 0 24 24"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z" /></svg>
               </a>
+            </div>
+          </div>
+        )}
+        
+        {shareMode === 'overlay' && composedOverlayImage && (
+          <div className="space-y-4 text-center animate-fade-in">
+            <img 
+              src={`data:${composedOverlayImage.mimeType};base64,${composedOverlayImage.base64}`} 
+              alt="Image with analysis overlays" 
+              className="rounded-lg border-2 border-gray-600 max-h-64 w-auto mx-auto"
+            />
+            <p className="text-sm text-gray-400">Share this image with analysis overlays.</p>
+            <div className="flex flex-col gap-3 pt-2">
+              <button
+                onClick={handleShareComposedImage}
+                disabled={!navigator.share}
+                className="w-full inline-flex items-center justify-center px-4 py-2 text-sm font-semibold rounded-md shadow-sm transition-colors duration-200 bg-cyan-600 hover:bg-cyan-700 text-white disabled:bg-gray-500 disabled:cursor-not-allowed"
+                title={!navigator.share ? 'Web Share API not supported' : 'Share image using native dialog'}
+              >
+                Share Image
+              </button>
+              <button
+                onClick={handleDownloadComposedImage}
+                className="w-full inline-flex items-center justify-center px-4 py-2 text-sm font-semibold rounded-md shadow-sm transition-colors duration-200 bg-gray-600 hover:bg-gray-700 text-white"
+              >
+                Download Image
+              </button>
             </div>
           </div>
         )}
@@ -563,8 +629,10 @@ export default function App() {
   const [isShareModalOpen, setIsShareModalOpen] = useState(false);
   const [imageDimensions, setImageDimensions] = useState({ width: 0, height: 0 });
   const [visualSummary, setVisualSummary] = useState<{base64: string, mimeType: string} | null>(null);
+  const [composedOverlayImage, setComposedOverlayImage] = useState<{base64: string, mimeType: string} | null>(null);
   const [isGeneratingVisual, setIsGeneratingVisual] = useState<boolean>(false);
-  const [showOriginal, setShowOriginal] = useState<boolean>(true);
+  const [isGeneratingOverlay, setIsGeneratingOverlay] = useState<boolean>(false);
+  const [viewMode, setViewMode] = useState<'original' | 'overlay' | 'ai'>('original');
   const [forecastHour, setForecastHour] = useState<number>(0);
   const [showHeatmap, setShowHeatmap] = useState<boolean>(false);
   const [tooltip, setTooltip] = useState<{ visible: boolean; content: string; x: number; y: number }>({ visible: false, content: '', x: 0, y: 0 });
@@ -630,7 +698,8 @@ export default function App() {
     setAnalysis(null);
     setError(null);
     setVisualSummary(null);
-    setShowOriginal(true);
+    setComposedOverlayImage(null);
+    setViewMode('original');
     setForecastHour(0);
     setShowHeatmap(false);
     setIncludeStormTrack(true);
@@ -712,149 +781,184 @@ export default function App() {
     resetAnalysis();
   };
 
-  const handleGenerateVisualSummary = useCallback(async () => {
-    if (!selectedImage || !analysis || !imageContainerRef.current) return;
+  const generateComposedImageBase64 = useCallback(async (): Promise<string> => {
+    if (!selectedImage || !analysis || !imageContainerRef.current) {
+        throw new Error("Missing required data for image composition.");
+    }
+    const { width, height } = imageDimensions;
+    const originalImg = new Image();
 
-    setIsGeneratingVisual(true);
-    setError(null);
-
-    try {
-      const { width, height } = imageDimensions;
-      const originalImg = new Image();
-
-      const getComposedImageBase64 = () => new Promise<string>((resolve, reject) => {
+    return new Promise<string>((resolve, reject) => {
         originalImg.onload = () => {
-          const canvas = document.createElement('canvas');
-          canvas.width = width;
-          canvas.height = height;
-          const ctx = canvas.getContext('2d');
-          if (!ctx) {
-            reject(new Error("Could not get canvas context"));
-            return;
-          }
+            const canvas = document.createElement('canvas');
+            canvas.width = width;
+            canvas.height = height;
+            const ctx = canvas.getContext('2d');
+            if (!ctx) {
+                reject(new Error("Could not get canvas context"));
+                return;
+            }
 
-          ctx.drawImage(originalImg, 0, 0, width, height);
+            ctx.drawImage(originalImg, 0, 0, width, height);
 
-          if (includeStormTrack && analysis.stormTrack && analysis.stormTrack.length > 0) {
-            ctx.beginPath();
-            const firstPoint = analysis.stormTrack[0];
-            ctx.moveTo(firstPoint.x / 100 * width, firstPoint.y / 100 * height);
-            analysis.stormTrack.forEach(point => {
-              ctx.lineTo(point.x / 100 * width, point.y / 100 * height);
-            });
-            ctx.strokeStyle = "rgba(255, 255, 255, 0.7)";
-            ctx.lineWidth = 2;
-            ctx.setLineDash([5, 5]);
-            ctx.stroke();
-            ctx.setLineDash([]);
+            if (includeStormTrack && analysis.stormTrack && analysis.stormTrack.length > 0) {
+                ctx.beginPath();
+                const firstPoint = analysis.stormTrack[0];
+                ctx.moveTo(firstPoint.x / 100 * width, firstPoint.y / 100 * height);
+                analysis.stormTrack.forEach(point => {
+                    ctx.lineTo(point.x / 100 * width, point.y / 100 * height);
+                });
+                ctx.strokeStyle = "rgba(255, 255, 255, 0.7)";
+                ctx.lineWidth = 2;
+                ctx.setLineDash([5, 5]);
+                ctx.stroke();
+                ctx.setLineDash([]);
 
-            analysis.stormTrack.forEach(point => {
-              ctx.beginPath();
-              ctx.arc(point.x / 100 * width, point.y / 100 * height, 6, 0, 2 * Math.PI);
-              ctx.fillStyle = getIntensityColor(point.intensity);
-              ctx.strokeStyle = "rgba(0, 0, 0, 0.5)";
-              ctx.lineWidth = 1;
-              ctx.fill();
-              ctx.stroke();
-            });
-          }
+                analysis.stormTrack.forEach(point => {
+                    ctx.beginPath();
+                    ctx.arc(point.x / 100 * width, point.y / 100 * height, 6, 0, 2 * Math.PI);
+                    ctx.fillStyle = getIntensityColor(point.intensity);
+                    ctx.strokeStyle = "rgba(0, 0, 0, 0.5)";
+                    ctx.lineWidth = 1;
+                    ctx.fill();
+                    ctx.stroke();
+                });
+            }
 
-          if (includeAnomalies && analysis.anomalyStreaks && analysis.anomalyStreaks.length > 0) {
-            analysis.anomalyStreaks.forEach(streak => {
-              ctx.beginPath();
-              const firstPoint = streak.points[0];
-              ctx.moveTo(firstPoint.x / 100 * width, firstPoint.y / 100 * height);
-              for (let i = 1; i < streak.points.length; i++) {
-                const point = streak.points[i];
-                ctx.lineTo(point.x / 100 * width, point.y / 100 * height);
-              }
-              ctx.closePath();
-              ctx.fillStyle = "rgba(250, 204, 21, 0.25)";
-              ctx.strokeStyle = "#facc15";
-              ctx.lineWidth = 2;
-              ctx.fill();
-              ctx.stroke();
-              
-              if (streak.points.length > 0) {
-                const centroid = streak.points.reduce((acc, p) => ({
-                  x: acc.x + p.x / 100 * width,
-                  y: acc.y + p.y / 100 * height
+            if (includeAnomalies && analysis.anomalyStreaks && analysis.anomalyStreaks.length > 0) {
+                analysis.anomalyStreaks.forEach(streak => {
+                    ctx.beginPath();
+                    const firstPoint = streak.points[0];
+                    ctx.moveTo(firstPoint.x / 100 * width, firstPoint.y / 100 * height);
+                    for (let i = 1; i < streak.points.length; i++) {
+                        const point = streak.points[i];
+                        ctx.lineTo(point.x / 100 * width, point.y / 100 * height);
+                    }
+                    ctx.closePath();
+                    ctx.fillStyle = "rgba(250, 204, 21, 0.25)";
+                    ctx.strokeStyle = "#facc15";
+                    ctx.lineWidth = 2;
+                    ctx.fill();
+                    ctx.stroke();
+                    
+                    if (streak.points.length > 0) {
+                        const centroid = streak.points.reduce((acc, p) => ({
+                            x: acc.x + p.x / 100 * width,
+                            y: acc.y + p.y / 100 * height
+                        }), { x: 0, y: 0 });
+                        centroid.x /= streak.points.length;
+                        centroid.y /= streak.points.length;
+
+                        ctx.font = 'bold 14px sans-serif';
+                        ctx.textAlign = 'center';
+                        ctx.textBaseline = 'middle';
+                        ctx.strokeStyle = 'black';
+                        ctx.lineWidth = 3;
+                        ctx.strokeText(streak.description, centroid.x, centroid.y);
+                        ctx.fillStyle = 'white';
+                        ctx.fillText(streak.description, centroid.x, centroid.y);
+                    }
+                });
+            }
+
+            if (includeStormSurge && analysis.stormSurge && analysis.stormSurge.affectedArea.length > 0) {
+                const surgeArea = analysis.stormSurge.affectedArea;
+                ctx.beginPath();
+                ctx.moveTo(surgeArea[0].x / 100 * width, surgeArea[0].y / 100 * height);
+                for (let i = 1; i < surgeArea.length; i++) {
+                    ctx.lineTo(surgeArea[i].x / 100 * width, surgeArea[i].y / 100 * height);
+                }
+                ctx.closePath();
+                ctx.fillStyle = "rgba(220, 38, 38, 0.4)";
+                ctx.strokeStyle = "rgba(255, 100, 100, 0.8)";
+                ctx.lineWidth = 1.5;
+                ctx.fill();
+                ctx.stroke();
+
+                const centroid = surgeArea.reduce((acc, p) => ({
+                    x: acc.x + p.x / 100 * width,
+                    y: acc.y + p.y / 100 * height
                 }), { x: 0, y: 0 });
-                centroid.x /= streak.points.length;
-                centroid.y /= streak.points.length;
+                centroid.x /= surgeArea.length;
+                centroid.y /= surgeArea.length;
 
-                ctx.font = 'bold 14px sans-serif';
+                ctx.font = 'bold 16px sans-serif';
                 ctx.textAlign = 'center';
                 ctx.textBaseline = 'middle';
                 ctx.strokeStyle = 'black';
                 ctx.lineWidth = 3;
-                ctx.strokeText(streak.description, centroid.x, centroid.y);
+                ctx.strokeText(`${analysis.stormSurge!.surgeHeight}m Surge`, centroid.x, centroid.y);
                 ctx.fillStyle = 'white';
-                ctx.fillText(streak.description, centroid.x, centroid.y);
-              }
-            });
-          }
-
-          if (includeStormSurge && analysis.stormSurge && analysis.stormSurge.affectedArea.length > 0) {
-            const surgeArea = analysis.stormSurge.affectedArea;
-            ctx.beginPath();
-            ctx.moveTo(surgeArea[0].x / 100 * width, surgeArea[0].y / 100 * height);
-            for (let i = 1; i < surgeArea.length; i++) {
-              ctx.lineTo(surgeArea[i].x / 100 * width, surgeArea[i].y / 100 * height);
+                ctx.fillText(`${analysis.stormSurge!.surgeHeight}m Surge`, centroid.x, centroid.y);
             }
-            ctx.closePath();
-            ctx.fillStyle = "rgba(220, 38, 38, 0.4)";
-            ctx.strokeStyle = "rgba(255, 100, 100, 0.8)";
-            ctx.lineWidth = 1.5;
-            ctx.fill();
-            ctx.stroke();
 
-            const centroid = surgeArea.reduce((acc, p) => ({
-              x: acc.x + p.x / 100 * width,
-              y: acc.y + p.y / 100 * height
-            }), { x: 0, y: 0 });
-            centroid.x /= surgeArea.length;
-            centroid.y /= surgeArea.length;
-
-            ctx.font = 'bold 16px sans-serif';
-            ctx.textAlign = 'center';
-            ctx.textBaseline = 'middle';
-            ctx.strokeStyle = 'black';
-            ctx.lineWidth = 3;
-            ctx.strokeText(`${analysis.stormSurge!.surgeHeight}m Surge`, centroid.x, centroid.y);
-            ctx.fillStyle = 'white';
-            ctx.fillText(`${analysis.stormSurge!.surgeHeight}m Surge`, centroid.x, centroid.y);
-          }
-
-          const pngDataUrl = canvas.toDataURL('image/png');
-          resolve(pngDataUrl.split(',')[1]);
+            const pngDataUrl = canvas.toDataURL('image/png');
+            resolve(pngDataUrl.split(',')[1]);
         };
 
         originalImg.onerror = () => {
-          reject(new Error("Failed to load original image for composition."));
+            reject(new Error("Failed to load original image for composition."));
         };
 
         originalImg.src = `data:${selectedImage.mimeType};base64,${selectedImage.base64}`;
-      });
-
-      const composedBase64 = await getComposedImageBase64();
-      const generatedImageBase64 = await generateVisualSummaryImage(composedBase64, 'image/png', analysis);
-
-      setVisualSummary({ base64: generatedImageBase64, mimeType: 'image/png' });
-      setShowOriginal(false);
-
-    } catch (err: any) {
-      setError(err.message || 'Failed to generate visual summary.');
-    } finally {
-      setIsGeneratingVisual(false);
-    }
+    });
   }, [selectedImage, analysis, imageDimensions, includeStormTrack, includeAnomalies, includeStormSurge]);
+
+  const handleGenerateOverlayImage = useCallback(async () => {
+      setIsGeneratingOverlay(true);
+      setError(null);
+      try {
+          const composedBase64 = await generateComposedImageBase64();
+          setComposedOverlayImage({ base64: composedBase64, mimeType: 'image/png' });
+          setViewMode('overlay');
+      } catch (err: any) {
+          setError(err.message || 'Failed to generate overlay image.');
+      } finally {
+          setIsGeneratingOverlay(false);
+      }
+  }, [generateComposedImageBase64]);
+
+  const handleGenerateAISummary = useCallback(async () => {
+    if (!analysis) return;
+    setIsGeneratingVisual(true);
+    setError(null);
+    try {
+        const composedBase64 = await generateComposedImageBase64();
+        const generatedImageBase64 = await generateVisualSummaryImage(composedBase64, 'image/png', analysis);
+        setVisualSummary({ base64: generatedImageBase64, mimeType: 'image/png' });
+        setViewMode('ai');
+    } catch (err: any) {
+        setError(err.message || 'Failed to generate AI summary.');
+    } finally {
+        setIsGeneratingVisual(false);
+    }
+  }, [analysis, generateComposedImageBase64]);
 
   const triggerFileSelect = () => fileInputRef.current?.click();
   const hasStormTrack = analysis?.stormTrack && analysis.stormTrack.length > 0;
   const hasAnomalies = analysis?.anomalyStreaks && analysis.anomalyStreaks.length > 0;
   const hasStormSurge = analysis?.stormSurge && analysis.stormSurge.affectedArea.length > 0;
   const hasOverlays = hasStormTrack || hasAnomalies || hasStormSurge;
+
+  const getDisplayImage = () => {
+    if (!selectedImage) return null;
+    switch (viewMode) {
+      case 'ai':
+        if (visualSummary) return { src: `data:${visualSummary.mimeType};base64,${visualSummary.base64}`, name: 'AI-Generated Visual Summary' };
+        break;
+      case 'overlay':
+        if (composedOverlayImage) return { src: `data:${composedOverlayImage.mimeType};base64,${composedOverlayImage.base64}`, name: 'Image with Overlays' };
+        break;
+    }
+    return { src: `data:${selectedImage.mimeType};base64,${selectedImage.base64}`, name: selectedImage.file.name };
+  };
+  const displayImage = getDisplayImage();
+
+  const getViewModeButtonClass = (mode: typeof viewMode) => {
+    return viewMode === mode
+      ? 'bg-cyan-500 text-white'
+      : 'bg-transparent text-gray-300 hover:bg-gray-600';
+  };
 
   return (
     <div className="min-h-screen bg-gray-900 text-white flex flex-col items-center p-4 sm:p-6 lg:p-8">
@@ -902,22 +1006,24 @@ export default function App() {
             {selectedImage ? (
               <div className="text-center w-full">
                 <div ref={imageContainerRef} className="relative w-full aspect-video bg-gray-800/50 rounded-lg overflow-hidden mb-4 flex items-center justify-center">
-                  <img
-                    key={showOriginal || !visualSummary ? selectedImage.base64 : visualSummary.base64}
-                    src={showOriginal || !visualSummary ? `data:${selectedImage.mimeType};base64,${selectedImage.base64}` : `data:${visualSummary.mimeType};base64,${visualSummary.base64}`}
-                    alt="Weather satellite analysis"
-                    className={`w-full h-full object-cover transition-all duration-700 ease-out ${isHiResImageLoaded ? 'blur-0 scale-100' : 'blur-xl scale-105'}`}
-                    onLoad={() => setIsHiResImageLoaded(true)}
-                  />
-                  {showOriginal && hasStormTrack && <StormTrackDisplay track={analysis.stormTrack!} dimensions={imageDimensions} forecastHour={forecastHour} />}
-                  {showOriginal && hasAnomalies && <AnomalyStreaksDisplay streaks={analysis.anomalyStreaks!} dimensions={imageDimensions} setTooltip={setTooltip} />}
-                  {showOriginal && hasStormSurge && <StormSurgeDisplay surge={analysis.stormSurge!} dimensions={imageDimensions} />}
-                  {showOriginal && showHeatmap && analysis && (
+                   {displayImage && (
+                    <img
+                        key={displayImage.src}
+                        src={displayImage.src}
+                        alt={displayImage.name}
+                        className={`w-full h-full object-cover transition-all duration-700 ease-out ${isHiResImageLoaded ? 'blur-0 scale-100' : 'blur-xl scale-105'}`}
+                        onLoad={() => setIsHiResImageLoaded(true)}
+                    />
+                   )}
+                  {viewMode === 'original' && hasStormTrack && <StormTrackDisplay track={analysis.stormTrack!} dimensions={imageDimensions} forecastHour={forecastHour} />}
+                  {viewMode === 'original' && hasAnomalies && <AnomalyStreaksDisplay streaks={analysis.anomalyStreaks!} dimensions={imageDimensions} setTooltip={setTooltip} />}
+                  {viewMode === 'original' && hasStormSurge && <StormSurgeDisplay surge={analysis.stormSurge!} dimensions={imageDimensions} />}
+                  {viewMode === 'original' && showHeatmap && analysis && (
                     <TemperatureHeatmapDisplay temperature={analysis.temperature} />
                   )}
                 </div>
 
-                {hasStormTrack && showOriginal && (
+                {hasStormTrack && viewMode === 'original' && (
                   <div className="mt-4 p-4 bg-gray-900/50 rounded-lg">
                     <label htmlFor="time-slider" className="block text-sm font-medium text-gray-300 mb-2">
                       Forecast Time: <span className="font-bold text-cyan-400">+{forecastHour} Hours</span>
@@ -934,10 +1040,20 @@ export default function App() {
                     />
                   </div>
                 )}
+                
+                {(composedOverlayImage || visualSummary) && (
+                  <div className="mt-4 flex justify-center bg-gray-900/50 p-1 rounded-lg">
+                      <div className="flex space-x-1 rounded-md bg-gray-700 p-1" role="group">
+                          <button onClick={() => setViewMode('original')} className={`px-3 py-1 text-sm font-medium rounded-md transition-colors ${getViewModeButtonClass('original')}`}>Original</button>
+                          {composedOverlayImage && <button onClick={() => setViewMode('overlay')} className={`px-3 py-1 text-sm font-medium rounded-md transition-colors ${getViewModeButtonClass('overlay')}`}>Overlay</button>}
+                          {visualSummary && <button onClick={() => setViewMode('ai')} className={`px-3 py-1 text-sm font-medium rounded-md transition-colors ${getViewModeButtonClass('ai')}`}>AI Enhanced</button>}
+                      </div>
+                  </div>
+                )}
 
                 {analysis && hasOverlays && (
                   <div className="mt-4 p-3 bg-gray-900/50 rounded-lg">
-                    <p className="text-sm font-medium text-gray-300 mb-2">Include in Visual Summary:</p>
+                    <p className="text-sm font-medium text-gray-300 mb-2">Include in Generated Images:</p>
                     <div className="flex flex-wrap gap-x-6 gap-y-2">
                       {hasStormTrack && (
                         <label className="flex items-center space-x-2 text-sm text-gray-200 cursor-pointer">
@@ -979,31 +1095,31 @@ export default function App() {
                 {analysis && (
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-4">
                         <button
-                            onClick={handleGenerateVisualSummary}
-                            disabled={isLoading || isGeneratingVisual || !hasOverlays}
-                            className="w-full inline-flex items-center justify-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-purple-600 hover:bg-purple-700 disabled:bg-gray-500 disabled:cursor-not-allowed"
-                            title={!hasOverlays ? "No overlays to generate a summary from" : "Use Nano-Banana to generate an enhanced visual"}
+                            onClick={handleGenerateOverlayImage}
+                            disabled={isLoading || isGeneratingOverlay || isGeneratingVisual || !hasOverlays}
+                            className="w-full inline-flex items-center justify-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-teal-600 hover:bg-teal-700 disabled:bg-gray-500 disabled:cursor-not-allowed"
+                            title={!hasOverlays ? "No analysis data to generate an overlay from" : "Generate a static image with analysis overlays"}
                         >
-                            {isGeneratingVisual ? 'Generating...' : 'Visualize with Nano-Banana'}
+                            {isGeneratingOverlay ? 'Generating...' : 'Generate Overlay Image'}
                         </button>
-                        {visualSummary ? (
-                            <button
-                                onClick={() => setShowOriginal(!showOriginal)}
-                                className="w-full inline-flex items-center justify-center px-4 py-2 border border-gray-600 text-sm font-medium rounded-md shadow-sm text-gray-300 bg-gray-700 hover:bg-gray-600"
-                            >
-                                {showOriginal ? 'Show Visual Summary' : 'Show Original'}
-                            </button>
-                        ): <div className="hidden sm:block"></div>}
+                        <button
+                            onClick={handleGenerateAISummary}
+                            disabled={isLoading || isGeneratingVisual || isGeneratingOverlay || !hasOverlays}
+                            className="w-full inline-flex items-center justify-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-purple-600 hover:bg-purple-700 disabled:bg-gray-500 disabled:cursor-not-allowed"
+                            title={!hasOverlays ? "No analysis data to generate a summary from" : "Use AI to generate an enhanced visual summary"}
+                        >
+                            {isGeneratingVisual ? 'Generating...' : 'Generate AI Summary'}
+                        </button>
                         <button
                           onClick={() => setShowHeatmap(!showHeatmap)}
-                          className={`w-full inline-flex items-center justify-center px-4 py-2 border text-sm font-medium rounded-md shadow-sm transition-colors sm:col-span-2 ${showHeatmap ? 'bg-teal-600 hover:bg-teal-700 border-transparent text-white' : 'bg-gray-700 hover:bg-gray-600 border-gray-600 text-gray-300'}`}
+                          className={`w-full inline-flex items-center justify-center px-4 py-2 border text-sm font-medium rounded-md shadow-sm transition-colors sm:col-span-2 ${showHeatmap ? 'bg-orange-600 hover:bg-orange-700 border-transparent text-white' : 'bg-gray-700 hover:bg-gray-600 border-gray-600 text-gray-300'}`}
                         >
                           {showHeatmap ? 'Hide' : 'Show'} Temperature Heatmap
                         </button>
                     </div>
                 )}
                 
-                <p className="text-sm text-gray-300 truncate mt-4">{showOriginal ? selectedImage.file.name : 'AI-Generated Visual Summary'}</p>
+                <p className="text-sm text-gray-300 truncate mt-4">{displayImage?.name || ''}</p>
 
                 {hasStormTrack && (
                   <div className="mt-4 text-xs text-left bg-gray-900/50 p-3 rounded-md">
@@ -1067,6 +1183,7 @@ export default function App() {
         onClose={() => setIsShareModalOpen(false)} 
         analysisData={analysis}
         visualSummaryImage={visualSummary}
+        composedOverlayImage={composedOverlayImage}
         selectedImage={selectedImage}
       />
     </div>
