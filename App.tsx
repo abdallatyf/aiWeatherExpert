@@ -707,9 +707,9 @@ export default function App() {
                             onClick={handleGenerateVisualSummary}
                             disabled={isLoading || isGeneratingVisual || !hasOverlays}
                             className="flex-1 inline-flex items-center justify-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-purple-600 hover:bg-purple-700 disabled:bg-gray-500 disabled:cursor-not-allowed"
-                            title={!hasOverlays ? "No overlays to generate a summary from" : "Use AI to generate an enhanced visual"}
+                            title={!hasOverlays ? "No overlays to generate a summary from" : "Use Nano-Banana to generate an enhanced visual"}
                         >
-                            {isGeneratingVisual ? 'Generating...' : 'Generate Visual Summary'}
+                            {isGeneratingVisual ? 'Generating...' : 'Visualize with Nano-Banana'}
                         </button>
                         {visualSummary && (
                             <button
