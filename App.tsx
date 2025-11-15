@@ -281,10 +281,14 @@ const getIntensityColor = (intensity: string) => {
   return '#a3e635'; // lime-400 for Tropical Storm/Depression
 };
 
-const StormTrackDisplay = ({ track, dimensions }: { track: StormTrackPoint[], dimensions: { width: number, height: number } }) => {
+const StormTrackDisplay = ({ track, dimensions, forecastHour }: { track: StormTrackPoint[], dimensions: { width: number, height: number }, forecastHour: number }) => {
   if (!track || track.length === 0 || dimensions.width === 0) return null;
+  
+  const visibleTrack = track.filter(p => p.hours <= forecastHour);
+  if (visibleTrack.length === 0) return null;
 
-  const points = track.map(p => `${p.x / 100 * dimensions.width},${p.y / 100 * dimensions.height}`).join(' ');
+  const activePoint = visibleTrack[visibleTrack.length - 1];
+  const pathPoints = visibleTrack.map(p => `${p.x / 100 * dimensions.width},${p.y / 100 * dimensions.height}`).join(' ');
 
   return (
     <>
@@ -301,20 +305,20 @@ const StormTrackDisplay = ({ track, dimensions }: { track: StormTrackPoint[], di
       <svg className="absolute top-0 left-0 w-full h-full pointer-events-none" viewBox={`0 0 ${dimensions.width} ${dimensions.height}`}>
         <polyline
           className="storm-path"
-          points={points}
+          points={pathPoints}
           fill="none"
           stroke="rgba(255, 255, 255, 0.7)"
           strokeWidth="2"
           strokeDasharray="5,5"
         />
-        {track.map((point, index) => (
+        {visibleTrack.map((point, index) => (
           <circle
             key={index}
-            className="storm-point pointer-events-auto"
+            className={point === activePoint ? "storm-point pointer-events-auto" : "pointer-events-auto"}
             style={{ animationDelay: `${index * 0.3}s` }}
             cx={point.x / 100 * dimensions.width}
             cy={point.y / 100 * dimensions.height}
-            r="6"
+            r={point === activePoint ? 8 : 4}
             fill={getIntensityColor(point.intensity)}
             stroke="rgba(0, 0, 0, 0.5)"
             strokeWidth="1"
@@ -426,6 +430,7 @@ export default function App() {
   const [visualSummary, setVisualSummary] = useState<{base64: string, mimeType: string} | null>(null);
   const [isGeneratingVisual, setIsGeneratingVisual] = useState<boolean>(false);
   const [showOriginal, setShowOriginal] = useState<boolean>(true);
+  const [forecastHour, setForecastHour] = useState<number>(0);
 
 
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -458,6 +463,7 @@ export default function App() {
     setError(null);
     setVisualSummary(null);
     setShowOriginal(true);
+    setForecastHour(0);
   }, []);
 
   const handlePaste = useCallback((event: ClipboardEvent) => {
@@ -633,6 +639,26 @@ export default function App() {
         .precip-drop1 { animation: fall 1.5s linear infinite; animation-delay: 0s; }
         .precip-drop2 { animation: fall 1.5s linear infinite; animation-delay: 0.5s; }
         .precip-drop3 { animation: fall 1.5s linear infinite; animation-delay: 1s; }
+        
+        input[type=range]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 20px;
+            height: 20px;
+            background: #22d3ee; /* cyan-400 */
+            border-radius: 50%;
+            cursor: pointer;
+            border: 2px solid #fff;
+            margin-top: -8px; /* Center thumb on the track */
+        }
+        input[type=range]::-moz-range-thumb {
+            width: 16px;
+            height: 16px;
+            background: #22d3ee; /* cyan-400 */
+            border-radius: 50%;
+            cursor: pointer;
+            border: 2px solid #fff;
+        }
       `}</style>
       <div className="w-full max-w-4xl mx-auto">
         <header className="text-center mb-8">
@@ -652,13 +678,31 @@ export default function App() {
                     className={`w-full h-full object-cover transition-all duration-700 ease-out ${isHiResImageLoaded ? 'blur-0 scale-100' : 'blur-xl scale-105'}`}
                     onLoad={() => setIsHiResImageLoaded(true)}
                   />
-                  {showOriginal && hasStormTrack && <StormTrackDisplay track={analysis.stormTrack!} dimensions={imageDimensions} />}
+                  {showOriginal && hasStormTrack && <StormTrackDisplay track={analysis.stormTrack!} dimensions={imageDimensions} forecastHour={forecastHour} />}
                   {showOriginal && hasAnomalies && <AnomalyStreaksDisplay streaks={analysis.anomalyStreaks!} dimensions={imageDimensions} />}
                   {showOriginal && hasStormSurge && <StormSurgeDisplay surge={analysis.stormSurge!} dimensions={imageDimensions} />}
                 </div>
 
+                {hasStormTrack && showOriginal && (
+                  <div className="mt-4 p-4 bg-gray-900/50 rounded-lg">
+                    <label htmlFor="time-slider" className="block text-sm font-medium text-gray-300 mb-2">
+                      Forecast Time: <span className="font-bold text-cyan-400">+{forecastHour} Hours</span>
+                    </label>
+                    <input
+                      id="time-slider"
+                      type="range"
+                      min="0"
+                      max="48"
+                      step="1"
+                      value={forecastHour}
+                      onChange={(e) => setForecastHour(parseInt(e.target.value, 10))}
+                      className="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer"
+                    />
+                  </div>
+                )}
+
                 {analysis && (
-                    <div className="flex flex-col sm:flex-row gap-2 mb-4">
+                    <div className="flex flex-col sm:flex-row gap-2 mt-4">
                         <button
                             onClick={handleGenerateVisualSummary}
                             disabled={isLoading || isGeneratingVisual || !hasOverlays}
@@ -678,7 +722,7 @@ export default function App() {
                     </div>
                 )}
                 
-                <p className="text-sm text-gray-300 truncate">{showOriginal ? selectedImage.file.name : 'AI-Generated Visual Summary'}</p>
+                <p className="text-sm text-gray-300 truncate mt-4">{showOriginal ? selectedImage.file.name : 'AI-Generated Visual Summary'}</p>
 
                 {hasStormTrack && (
                   <div className="mt-4 text-xs text-left bg-gray-900/50 p-3 rounded-md">
