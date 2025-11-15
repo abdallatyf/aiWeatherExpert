@@ -1,4 +1,3 @@
-
 import React, { useState, useCallback, useRef, useEffect } from 'react';
 import { ImageFile } from './types';
 import { explainWeatherFromImage, WeatherAnalysis, StormTrackPoint, AnomalyStreak, generateVisualSummaryImage, StormSurgeForecast } from './services/geminiService';
@@ -15,13 +14,109 @@ const base64ToFile = (base64: string, filename: string, mimeType: string): File 
   return new File([blob], filename, { type: mimeType });
 };
 
+const ThemeToggle = ({ theme, toggleTheme }: { theme: 'light' | 'dark', toggleTheme: () => void }) => (
+  <button
+    onClick={toggleTheme}
+    className="p-2 rounded-full text-gray-500 dark:text-gray-400 bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-gray-100 dark:focus:ring-offset-gray-900 focus:ring-cyan-500 transition-colors"
+    aria-label="Toggle theme"
+  >
+    {theme === 'dark' ? (
+      <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" />
+      </svg>
+    ) : (
+      <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" />
+      </svg>
+    )}
+  </button>
+);
+
+const MapModal = ({ 
+  isOpen, 
+  onClose, 
+  analysis 
+}: { 
+  isOpen: boolean, 
+  onClose: () => void, 
+  analysis: WeatherAnalysis | null
+}) => {
+  if (!isOpen || !analysis?.centerCoordinates) return null;
+
+  const { lat, lon } = analysis.centerCoordinates;
+  const zoom = analysis.zoomLevel || 5;
+  // Use 'k' for satellite map type
+  const mapSrc = `https://maps.google.com/maps?q=${lat},${lon}&z=${zoom}&output=embed&t=k`;
+  const earthLink = `https://earth.google.com/web/@${lat},${lon},635a,22248d,35y,0h,0t,0r`;
+
+  return (
+    <div 
+      className="fixed inset-0 bg-gray-800 bg-opacity-50 dark:bg-black dark:bg-opacity-75 flex items-center justify-center z-50 p-4 transition-opacity duration-300" 
+      onClick={onClose}
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="map-modal-title"
+    >
+      <div 
+        className="bg-white dark:bg-gray-800 rounded-lg shadow-xl p-6 w-full max-w-2xl relative transform transition-all duration-300 scale-95 opacity-0 animate-fade-in-scale" 
+        onClick={(e) => e.stopPropagation()}
+      >
+        <button 
+          onClick={onClose} 
+          className="absolute top-3 right-3 text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-white transition-colors"
+          aria-label="Close map dialog"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
+          </svg>
+        </button>
+        <h3 id="map-modal-title" className="text-2xl font-bold text-cyan-600 dark:text-cyan-400 mb-4">
+          Map View: {analysis.location}
+        </h3>
+        <div className="aspect-video w-full bg-gray-200 dark:bg-gray-700 rounded-lg overflow-hidden border border-gray-300 dark:border-gray-600">
+          <iframe
+            width="100%"
+            height="100%"
+            frameBorder="0"
+            scrolling="no"
+            src={mapSrc}
+            title={`Interactive map of ${analysis.location}`}
+          ></iframe>
+        </div>
+        <p className="mt-4 text-sm text-gray-600 dark:text-gray-400 bg-gray-100 dark:bg-gray-700 p-3 rounded-md">
+          Note: Analysis overlays (storm tracks, etc.) are only visible on the main satellite view.
+        </p>
+         <div className="mt-4 flex justify-end items-center gap-4">
+          <a 
+            href={earthLink} 
+            target="_blank" 
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-2 px-4 py-2 text-sm font-semibold rounded-md shadow-sm transition-colors duration-200 bg-gray-600 hover:bg-gray-700 text-white"
+          >
+            View in Google Earth (3D)
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
+          </a>
+          <button
+            onClick={onClose}
+            className="px-4 py-2 text-sm font-semibold rounded-md shadow-sm transition-colors duration-200 bg-cyan-600 hover:bg-cyan-700 text-white"
+          >
+            Close
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+
 const ShareModal = ({ 
   isOpen, 
   onClose, 
   analysisData, 
   visualSummaryImage, 
   composedOverlayImage,
-  selectedImage
+  selectedImage,
+  theme
 }: { 
   isOpen: boolean, 
   onClose: () => void, 
@@ -29,6 +124,7 @@ const ShareModal = ({
   visualSummaryImage: { base64: string, mimeType: string } | null,
   composedOverlayImage: { base64: string, mimeType: string } | null,
   selectedImage: ImageFile | null,
+  theme: 'light' | 'dark'
 }) => {
   const [copyButtonText, setCopyButtonText] = useState('Copy');
   const [shareMode, setShareMode] = useState<'analysis' | 'original' | 'overlay' | 'visual'>('analysis');
@@ -146,36 +242,40 @@ const ShareModal = ({
 
   const getTabClass = (mode: 'analysis' | 'original' | 'overlay' | 'visual') => {
     return shareMode === mode
-      ? 'border-cyan-400 text-cyan-400'
-      : 'border-transparent text-gray-400 hover:text-white hover:border-gray-500';
+      ? 'border-cyan-500 text-cyan-600 dark:border-cyan-400 dark:text-cyan-400'
+      : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-400 dark:text-gray-400 dark:hover:text-white dark:hover:border-gray-500';
   };
+  
+  const qrBgColor = theme === 'dark' ? '374151' : 'f3f4f6';
+  const qrColor = theme === 'dark' ? 'e5e7eb' : '111827';
+  const qrApiUrl = `https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${encodedSummary}&bgcolor=${qrBgColor}&color=${qrColor}&qzone=1`;
 
   return (
     <div 
-      className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 p-4 transition-opacity duration-300" 
+      className="fixed inset-0 bg-gray-800 bg-opacity-50 dark:bg-black dark:bg-opacity-75 flex items-center justify-center z-50 p-4 transition-opacity duration-300" 
       onClick={onClose}
       role="dialog"
       aria-modal="true"
       aria-labelledby="share-modal-title"
     >
       <div 
-        className="bg-gray-800 rounded-lg shadow-xl p-6 w-full max-w-sm relative transform transition-all duration-300 scale-95 opacity-0 animate-fade-in-scale" 
+        className="bg-white dark:bg-gray-800 rounded-lg shadow-xl p-6 w-full max-w-sm relative transform transition-all duration-300 scale-95 opacity-0 animate-fade-in-scale" 
         onClick={(e) => e.stopPropagation()}
       >
         <button 
           onClick={onClose} 
-          className="absolute top-3 right-3 text-gray-400 hover:text-white transition-colors"
+          className="absolute top-3 right-3 text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-white transition-colors"
           aria-label="Close share dialog"
         >
           <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
           </svg>
         </button>
-        <h3 id="share-modal-title" className="text-2xl font-bold text-cyan-400 mb-4 text-center">
+        <h3 id="share-modal-title" className="text-2xl font-bold text-cyan-600 dark:text-cyan-400 mb-4 text-center">
           Share
         </h3>
         
-        <div className="border-b border-gray-700 mb-4">
+        <div className="border-b border-gray-200 dark:border-gray-700 mb-4">
             <nav className="-mb-px flex justify-center space-x-4" aria-label="Tabs">
                 <button
                     onClick={() => setShareMode('analysis')}
@@ -209,19 +309,19 @@ const ShareModal = ({
 
         {shareMode === 'analysis' && (
           <div className="space-y-6 animate-fade-in">
-            <div className="flex flex-col items-center justify-center bg-gray-700 p-4 rounded-lg">
-              <img src={`https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${encodedSummary}&bgcolor=374151&color=e5e7eb&qzone=1`} alt="QR Code for weather analysis" className="rounded-md" />
-              <p className="mt-3 text-sm text-gray-300">Scan QR code to share analysis</p>
+            <div className="flex flex-col items-center justify-center bg-gray-100 dark:bg-gray-700 p-4 rounded-lg">
+              <img src={qrApiUrl} alt="QR Code for weather analysis" className="rounded-md" />
+              <p className="mt-3 text-sm text-gray-600 dark:text-gray-300">Scan QR code to share analysis</p>
             </div>
             <div>
-              <label htmlFor="share-link" className="block text-sm font-medium text-gray-300 mb-2 text-center">Or Copy Link</label>
+              <label htmlFor="share-link" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2 text-center">Or Copy Link</label>
               <div className="flex gap-2">
                 <input
                   id="share-link"
                   type="text"
                   readOnly
                   value={shareLink}
-                  className="w-full bg-gray-600 text-gray-200 border border-gray-500 rounded-md px-3 py-1.5 text-sm focus:ring-cyan-500 focus:border-cyan-500"
+                  className="w-full bg-gray-100 text-gray-900 border border-gray-300 rounded-md px-3 py-1.5 text-sm focus:ring-cyan-500 focus:border-cyan-500 dark:bg-gray-600 dark:text-gray-200 dark:border-gray-500"
                   onClick={(e) => (e.target as HTMLInputElement).select()}
                 />
                 <button
@@ -232,12 +332,12 @@ const ShareModal = ({
                 </button>
               </div>
             </div>
-            <hr className="border-gray-600" />
+            <hr className="border-gray-200 dark:border-gray-600" />
             <div className="flex justify-center items-center gap-6">
-              <a href={`mailto:?subject=Weather Analysis for ${location}&body=${encodedSummary}`} target="_blank" rel="noopener noreferrer" className="text-gray-400 hover:text-white transition-colors" title="Share via Email">
+              <a href={`mailto:?subject=Weather Analysis for ${location}&body=${encodedSummary}`} target="_blank" rel="noopener noreferrer" className="text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-white transition-colors" title="Share via Email">
                 <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8" viewBox="0 0 20 20" fill="currentColor"><path d="M2.003 5.884L10 9.882l7.997-3.998A2 2 0 0016 4H4a2 2 0 00-1.997 1.884z" /><path d="M18 8.118l-8 4-8-4V14a2 2 0 002 2h12a2 2 0 002-2V8.118z" /></svg>
               </a>
-              <a href={`https://twitter.com/intent/tweet?text=${encodedSummary}`} target="_blank" rel="noopener noreferrer" className="text-gray-400 hover:text-white transition-colors" title="Share on Twitter">
+              <a href={`https://twitter.com/intent/tweet?text=${encodedSummary}`} target="_blank" rel="noopener noreferrer" className="text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-white transition-colors" title="Share on Twitter">
                 <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8" fill="currentColor" viewBox="0 0 24 24"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z" /></svg>
               </a>
             </div>
@@ -249,9 +349,9 @@ const ShareModal = ({
             <img 
               src={`data:${composedOverlayImage.mimeType};base64,${composedOverlayImage.base64}`} 
               alt="Image with analysis overlays" 
-              className="rounded-lg border-2 border-gray-600 max-h-64 w-auto mx-auto"
+              className="rounded-lg border-2 border-gray-200 dark:border-gray-600 max-h-64 w-auto mx-auto"
             />
-            <p className="text-sm text-gray-400">Share this image with analysis overlays.</p>
+            <p className="text-sm text-gray-600 dark:text-gray-400">Share this image with analysis overlays.</p>
             <div className="flex flex-col gap-3 pt-2">
               <button
                 onClick={handleShareComposedImage}
@@ -276,9 +376,9 @@ const ShareModal = ({
             <img 
               src={`data:${visualSummaryImage.mimeType};base64,${visualSummaryImage.base64}`} 
               alt="AI-generated visual summary" 
-              className="rounded-lg border-2 border-gray-600 max-h-64 w-auto mx-auto"
+              className="rounded-lg border-2 border-gray-200 dark:border-gray-600 max-h-64 w-auto mx-auto"
             />
-            <p className="text-sm text-gray-400">Share this AI-enhanced image with your analysis baked in.</p>
+            <p className="text-sm text-gray-600 dark:text-gray-400">Share this AI-enhanced image with your analysis baked in.</p>
             <div className="flex flex-col gap-3 pt-2">
               <button
                 onClick={handleShareVisualSummary}
@@ -303,9 +403,9 @@ const ShareModal = ({
             <img 
               src={`data:${selectedImage.mimeType};base64,${selectedImage.base64}`} 
               alt="Original satellite image" 
-              className="rounded-lg border-2 border-gray-600 max-h-64 w-auto mx-auto"
+              className="rounded-lg border-2 border-gray-200 dark:border-gray-600 max-h-64 w-auto mx-auto"
             />
-            <p className="text-sm text-gray-400">Share the original unprocessed satellite image.</p>
+            <p className="text-sm text-gray-600 dark:text-gray-400">Share the original unprocessed satellite image.</p>
             <div className="flex flex-col gap-3 pt-2">
               <button
                 onClick={handleShareOriginalImage}
@@ -342,65 +442,75 @@ const ShareModal = ({
   );
 };
 
-const LocationDisplay = ({ location }: { location: string }) => (
-  <div className="flex items-center gap-2" title={`Location: ${location}`}>
-    <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-green-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-      <path strokeLinecap="round" strokeLinejoin="round" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
-      <path strokeLinecap="round" strokeLinejoin="round" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
-    </svg>
-    <span className="text-lg font-semibold text-gray-200">{location}</span>
-  </div>
-);
+const LocationDisplay = ({ location, onMapClick, isMapAvailable }: { location: string, onMapClick: () => void, isMapAvailable: boolean }) => (
+    <button
+      onClick={onMapClick}
+      disabled={!isMapAvailable}
+      className="flex items-center gap-2 p-2 rounded-lg transition-colors duration-200 enabled:hover:bg-gray-200 enabled:dark:hover:bg-gray-600/50 disabled:cursor-not-allowed disabled:opacity-60 group"
+      title={isMapAvailable ? `Show ${location} on an interactive map` : 'Location coordinates not available for map view'}
+    >
+      <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-green-500 dark:text-green-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+        <path strokeLinecap="round" strokeLinejoin="round" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+        <path strokeLinecap="round" strokeLinejoin="round" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+      </svg>
+      <span className="text-lg font-semibold text-gray-700 dark:text-gray-200">{location}</span>
+      {isMapAvailable && (
+        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-gray-400 dark:text-gray-500 group-hover:text-cyan-500 dark:group-hover:text-cyan-400 transition-colors" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l5.447 2.724A1 1 0 0021 16.382V5.618a1 1 0 00-1.447-.894L15 7m-6 10l6-3m0 0l6-3m-6 3V7" />
+        </svg>
+      )}
+    </button>
+  );
 
 const TemperatureDisplay = ({ temp }: { temp: number }) => (
   <div className="flex items-center gap-2" title={`Estimated Temperature: ${temp}°C`}>
-    <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-red-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+    <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-red-500 dark:text-red-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
       <path strokeLinecap="round" strokeLinejoin="round" d="M13 16V4a4 4 0 10-8 0v12a6 6 0 108 0z" />
       <path strokeLinecap="round" strokeLinejoin="round" d="M13 16h-4" />
     </svg>
-    <span className="text-lg font-semibold text-gray-200">{Math.round(temp)}°C</span>
+    <span className="text-lg font-semibold text-gray-700 dark:text-gray-200">{Math.round(temp)}°C</span>
   </div>
 );
 
 const WindSpeedDisplay = ({ speed }: { speed: number }) => (
   <div className="flex items-center gap-2" title={`Estimated Wind Speed: ${Math.round(speed)} km/h`}>
-    <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-blue-300" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+    <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-blue-400 dark:text-blue-300" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
       <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 12h16.5m-16.5 3.75h16.5M3.75 19.5h16.5M5.625 4.5h12.75a1.875 1.875 0 010 3.75H5.625a1.875 1.875 0 010-3.75z" />
     </svg>
-    <span className="text-lg font-semibold text-gray-200">{Math.round(speed)} km/h</span>
+    <span className="text-lg font-semibold text-gray-700 dark:text-gray-200">{Math.round(speed)} km/h</span>
   </div>
 );
 
 const PrecipitationDisplay = ({ chance }: { chance: number }) => (
   <div className="flex items-center gap-2" title={`Chance of Precipitation: ${chance}%`}>
-      <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-cyan-300" fill="currentColor" stroke="none" viewBox="0 0 24 24">
+      <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-cyan-500 dark:text-cyan-300" fill="currentColor" stroke="none" viewBox="0 0 24 24">
           <path d="M17.502 19.001H6.5c-2.208 0-4-1.792-4-4s1.792-4 4-4h.198c.414-3.402 3.286-6 6.802-6 3.805 0 6.998 2.903 6.998 6.5v.5c1.381 0 2.5 1.119 2.5 2.5s-1.119 2.5-2.5 2.5z" />
           <circle className="precip-drop1" cx="8" cy="18" r="1.5" />
           <circle className="precip-drop2" cx="12" cy="18" r="1.5" />
           <circle className="precip-drop3" cx="16" cy="18" r="1.5" />
       </svg>
-      <span className="text-lg font-semibold text-gray-200">{chance}%</span>
+      <span className="text-lg font-semibold text-gray-700 dark:text-gray-200">{chance}%</span>
   </div>
 );
 
 
 const HumidityDisplay = ({ humidity }: { humidity: number }) => (
   <div className="flex items-center gap-2" title={`Humidity: ${humidity}%`}>
-     <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-blue-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+     <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-blue-500 dark:text-blue-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
        <path strokeLinecap="round" strokeLinejoin="round" d="M6.375 8.25a5.625 5.625 0 1111.25 0c0 3.108-2.517 5.625-5.625 5.625S6.375 11.358 6.375 8.25z" />
        <path strokeLinecap="round" strokeLinejoin="round" d="M12 13.875V19.5" />
        <path strokeLinecap="round" strokeLinejoin="round" d="M8.25 19.5h7.5" />
      </svg>
-    <span className="text-lg font-semibold text-gray-200">{humidity}%</span>
+    <span className="text-lg font-semibold text-gray-700 dark:text-gray-200">{humidity}%</span>
   </div>
 );
 
 const UvIndexDisplay = ({ index }: { index: number }) => (
   <div className="flex items-center gap-2" title={`UV Index: ${index}`}>
-    <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-yellow-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+    <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-yellow-500 dark:text-yellow-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
       <path strokeLinecap="round" strokeLinejoin="round" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" />
     </svg>
-    <span className="text-lg font-semibold text-gray-200">{index}</span>
+    <span className="text-lg font-semibold text-gray-700 dark:text-gray-200">{index}</span>
   </div>
 );
 
@@ -420,10 +530,10 @@ const WindDirectionArrow = ({ direction }: { direction: string }) => {
 
   return (
     <div className="flex items-center gap-2" title={`Wind Direction: ${direction}`}>
-      <span className="text-sm font-medium text-gray-400">{direction.toUpperCase()}</span>
-      <div className={`w-8 h-8 bg-gray-600 rounded-full flex items-center justify-center transform transition-transform duration-700 ease-in-out ${rotation}`}>
+      <span className="text-sm font-medium text-gray-600 dark:text-gray-400">{direction.toUpperCase()}</span>
+      <div className={`w-8 h-8 bg-gray-200 dark:bg-gray-600 rounded-full flex items-center justify-center transform transition-transform duration-700 ease-in-out ${rotation}`}>
         <div className="animate-spin-slow w-5 h-5 flex items-center justify-center">
-          <svg className="w-5 h-5 text-cyan-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <svg className="w-5 h-5 text-cyan-500 dark:text-cyan-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 19l-7-7 7-7 7 7-7 7z" transform="rotate(-45 12 12)" />
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 2v10" />
           </svg>
@@ -608,11 +718,83 @@ const StormSurgeDisplay = ({ surge, dimensions }: { surge: StormSurgeForecast, d
   );
 };
 
+const WindDirectionOverlay = ({ direction, dimensions }: { direction: string; dimensions: { width: number, height: number } }) => {
+  if (!direction || dimensions.width === 0) return null;
+
+  const getRotationForDirection = (dir: string): number => {
+    const normalizedDir = dir.toUpperCase().replace(/[^A-Z]/g, '');
+    // Wind direction is "from", so an arrow showing flow should be opposite.
+    // N wind is from North, flows South. Arrow points South (180 deg from North).
+    const directionMap: { [key: string]: number } = {
+      'N': 180, 'NE': 225, 'E': 270, 'SE': 315,
+      'S': 0, 'SW': 45, 'W': 90, 'NW': 135,
+    };
+    for (const key in directionMap) {
+      if (normalizedDir.startsWith(key)) {
+        return directionMap[key];
+      }
+    }
+    return 0; // Default to S wind (arrow points North)
+  };
+  
+  const rotation = getRotationForDirection(direction);
+
+  const gridRows = 4;
+  const gridCols = 6;
+  const arrows = [];
+  
+  // Arrow path pointing North (up)
+  const arrowPath = "M0,-8 L6,6 L0,3 L-6,6 z";
+
+  for (let i = 0; i < gridRows; i++) {
+    for (let j = 0; j < gridCols; j++) {
+      const x = (j + 0.5) * dimensions.width / gridCols;
+      const y = (i + 0.5) * dimensions.height / gridRows;
+      arrows.push({ x, y });
+    }
+  }
+
+  return (
+    <>
+      <style>{`
+        @keyframes fade-in-arrows {
+          from { opacity: 0; }
+          to { opacity: 1; }
+        }
+        .wind-arrow-group {
+          animation: fade-in-arrows 0.5s ease-out forwards;
+        }
+      `}</style>
+      <svg className="absolute top-0 left-0 w-full h-full pointer-events-none" viewBox={`0 0 ${dimensions.width} ${dimensions.height}`}>
+        <defs>
+          <path 
+            id="wind-arrow" 
+            d={arrowPath} 
+            fill="rgba(255, 255, 255, 0.9)" 
+            stroke="rgba(0, 0, 0, 0.7)" 
+            strokeWidth="1" 
+            strokeLinejoin="round"
+          />
+        </defs>
+        <g className="wind-arrow-group">
+          {arrows.map((arrow, index) => (
+            <use
+              key={index}
+              href="#wind-arrow"
+              transform={`translate(${arrow.x} ${arrow.y}) rotate(${rotation}) scale(1.5)`}
+            />
+          ))}
+        </g>
+      </svg>
+    </>
+  );
+};
+
 const Tooltip = ({ visible, content, x, y }: { visible: boolean; content: string; x: number; y: number }) => {
   if (!visible) return null;
   return (
     <div
-      className="fixed z-50 p-2 text-sm text-white bg-gray-900 bg-opacity-80 rounded-md shadow-lg pointer-events-none transition-opacity max-w-xs"
+      className="fixed z-50 p-2 text-sm text-gray-800 dark:text-white bg-white dark:bg-gray-900 dark:bg-opacity-80 rounded-md shadow-lg pointer-events-none transition-opacity max-w-xs border border-gray-200 dark:border-transparent"
       style={{ top: y + 15, left: x + 15 }}
     >
       {content}
@@ -622,12 +804,25 @@ const Tooltip = ({ visible, content, x, y }: { visible: boolean; content: string
 
 
 export default function App() {
+  const [theme, setTheme] = useState<'light' | 'dark'>(() => {
+    if (typeof window !== 'undefined') {
+      const savedTheme = localStorage.getItem('theme');
+      if (savedTheme === 'light' || savedTheme === 'dark') {
+        return savedTheme;
+      }
+      if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
+        return 'dark';
+      }
+    }
+    return 'light';
+  });
   const [selectedImage, setSelectedImage] = useState<ImageFile | null>(null);
   const [analysis, setAnalysis] = useState<WeatherAnalysis | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
   const [isHiResImageLoaded, setIsHiResImageLoaded] = useState<boolean>(false);
   const [isShareModalOpen, setIsShareModalOpen] = useState(false);
+  const [isMapModalOpen, setIsMapModalOpen] = useState(false);
   const [imageDimensions, setImageDimensions] = useState({ width: 0, height: 0 });
   const [visualSummary, setVisualSummary] = useState<{base64: string, mimeType: string} | null>(null);
   const [composedOverlayImage, setComposedOverlayImage] = useState<{base64: string, mimeType: string} | null>(null);
@@ -636,6 +831,7 @@ export default function App() {
   const [viewMode, setViewMode] = useState<'original' | 'overlay' | 'ai'>('original');
   const [forecastHour, setForecastHour] = useState<number>(0);
   const [showHeatmap, setShowHeatmap] = useState<boolean>(false);
+  const [showWind, setShowWind] = useState<boolean>(false);
   const [tooltip, setTooltip] = useState<{ visible: boolean; content: string; x: number; y: number }>({ visible: false, content: '', x: 0, y: 0 });
 
   const [includeStormTrack, setIncludeStormTrack] = useState<boolean>(true);
@@ -645,6 +841,23 @@ export default function App() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const imageContainerRef = useRef<HTMLDivElement>(null);
   
+  const toggleTheme = () => {
+    setTheme(prevTheme => prevTheme === 'light' ? 'dark' : 'light');
+  };
+
+  useEffect(() => {
+    if (theme === 'dark') {
+      document.documentElement.classList.add('dark');
+      document.body.classList.add('bg-gray-900');
+      document.body.classList.remove('bg-gray-100');
+    } else {
+      document.documentElement.classList.remove('dark');
+      document.body.classList.add('bg-gray-100');
+      document.body.classList.remove('bg-gray-900');
+    }
+    localStorage.setItem('theme', theme);
+  }, [theme]);
+
   useEffect(() => {
     try {
       const savedAnalysisJSON = localStorage.getItem('latestWeatherAnalysis');
@@ -703,6 +916,7 @@ export default function App() {
     setViewMode('original');
     setForecastHour(0);
     setShowHeatmap(false);
+    setShowWind(false);
     setIncludeStormTrack(true);
     setIncludeAnomalies(true);
     setIncludeStormSurge(true);
@@ -978,11 +1192,11 @@ export default function App() {
   const getViewModeButtonClass = (mode: typeof viewMode) => {
     return viewMode === mode
       ? 'bg-cyan-500 text-white'
-      : 'bg-transparent text-gray-300 hover:bg-gray-600';
+      : 'bg-transparent text-gray-700 hover:bg-gray-300 dark:text-gray-300 dark:hover:bg-gray-600';
   };
 
   return (
-    <div className="min-h-screen bg-gray-900 text-white flex flex-col items-center p-4 sm:p-6 lg:p-8">
+    <div className="min-h-screen bg-gray-100 dark:bg-gray-900 text-gray-900 dark:text-white flex flex-col items-center p-4 sm:p-6 lg:p-8">
       <style>{`
         @keyframes spin { to { transform: rotate(360deg); } }
         .animate-spin-slow { animation: spin 4s linear infinite; }
@@ -1017,16 +1231,19 @@ export default function App() {
       `}</style>
       <Tooltip visible={tooltip.visible} content={tooltip.content} x={tooltip.x} y={tooltip.y} />
       <div className="w-full max-w-4xl mx-auto">
-        <header className="text-center mb-8">
-          <h1 className="text-4xl sm:text-5xl font-bold text-cyan-400 mb-2">AI Weather Explainer</h1>
-          <p className="text-lg text-gray-400">Upload a satellite image for an expert meteorological analysis and storm tracking.</p>
+        <header className="text-center mb-8 relative">
+          <h1 className="text-4xl sm:text-5xl font-bold text-cyan-600 dark:text-cyan-400 mb-2">AI Weather Explainer</h1>
+          <p className="text-lg text-gray-600 dark:text-gray-400">Upload a satellite image for an expert meteorological analysis and storm tracking.</p>
+          <div className="absolute top-0 right-0">
+            <ThemeToggle theme={theme} toggleTheme={toggleTheme} />
+          </div>
         </header>
 
-        <main className="bg-gray-800 rounded-xl shadow-2xl p-6 grid grid-cols-1 lg:grid-cols-2 gap-8">
-          <div className="flex flex-col items-center justify-center bg-gray-700 p-6 rounded-lg border-2 border-dashed border-gray-600 min-h-[300px]">
+        <main className="bg-white dark:bg-gray-800 rounded-xl shadow-2xl p-6 grid grid-cols-1 lg:grid-cols-2 gap-8">
+          <div className="flex flex-col items-center justify-center bg-gray-100 dark:bg-gray-700 p-6 rounded-lg border-2 border-dashed border-gray-300 dark:border-gray-600 min-h-[300px]">
             {selectedImage ? (
               <div className="text-center w-full">
-                <div ref={imageContainerRef} className="relative w-full aspect-video bg-gray-800/50 rounded-lg overflow-hidden mb-4 flex items-center justify-center">
+                <div ref={imageContainerRef} className="relative w-full aspect-video bg-gray-200 dark:bg-gray-800/50 rounded-lg overflow-hidden mb-4 flex items-center justify-center">
                    {displayImage && (
                     <img
                         key={displayImage.src}
@@ -1042,12 +1259,15 @@ export default function App() {
                   {viewMode === 'original' && showHeatmap && analysis && (
                     <TemperatureHeatmapDisplay temperature={analysis.temperature} />
                   )}
+                  {viewMode === 'original' && showWind && analysis && (
+                    <WindDirectionOverlay direction={analysis.windDirection} dimensions={imageDimensions} />
+                  )}
                 </div>
 
                 {hasStormTrack && viewMode === 'original' && (
-                  <div className="mt-4 p-4 bg-gray-900/50 rounded-lg">
-                    <label htmlFor="time-slider" className="block text-sm font-medium text-gray-300 mb-2">
-                      Forecast Time: <span className="font-bold text-cyan-400">+{forecastHour} Hours</span>
+                  <div className="mt-4 p-4 bg-gray-200/50 dark:bg-gray-900/50 rounded-lg">
+                    <label htmlFor="time-slider" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                      Forecast Time: <span className="font-bold text-cyan-500 dark:text-cyan-400">+{forecastHour} Hours</span>
                     </label>
                     <input
                       id="time-slider"
@@ -1057,14 +1277,14 @@ export default function App() {
                       step="1"
                       value={forecastHour}
                       onChange={(e) => setForecastHour(parseInt(e.target.value, 10))}
-                      className="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer"
+                      className="w-full h-2 bg-gray-300 dark:bg-gray-700 rounded-lg appearance-none cursor-pointer"
                     />
                   </div>
                 )}
                 
                 {(composedOverlayImage || visualSummary) && (
-                  <div className="mt-4 flex justify-center bg-gray-900/50 p-1 rounded-lg">
-                      <div className="flex space-x-1 rounded-md bg-gray-700 p-1" role="group">
+                  <div className="mt-4 flex justify-center bg-gray-200/50 dark:bg-gray-900/50 p-1 rounded-lg">
+                      <div className="flex space-x-1 rounded-md bg-gray-300 dark:bg-gray-700 p-1" role="group">
                           <button onClick={() => setViewMode('original')} className={`px-3 py-1 text-sm font-medium rounded-md transition-colors ${getViewModeButtonClass('original')}`}>Original</button>
                           {composedOverlayImage && <button onClick={() => setViewMode('overlay')} className={`px-3 py-1 text-sm font-medium rounded-md transition-colors ${getViewModeButtonClass('overlay')}`}>Overlay</button>}
                           {visualSummary && <button onClick={() => setViewMode('ai')} className={`px-3 py-1 text-sm font-medium rounded-md transition-colors ${getViewModeButtonClass('ai')}`}>AI Enhanced</button>}
@@ -1073,38 +1293,38 @@ export default function App() {
                 )}
 
                 {analysis && hasOverlays && (
-                  <div className="mt-4 p-3 bg-gray-900/50 rounded-lg">
-                    <p className="text-sm font-medium text-gray-300 mb-2">Include in Generated Images:</p>
+                  <div className="mt-4 p-3 bg-gray-200/50 dark:bg-gray-900/50 rounded-lg">
+                    <p className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Include in Generated Images:</p>
                     <div className="flex flex-wrap gap-x-6 gap-y-2">
                       {hasStormTrack && (
-                        <label className="flex items-center space-x-2 text-sm text-gray-200 cursor-pointer">
+                        <label className="flex items-center space-x-2 text-sm text-gray-800 dark:text-gray-200 cursor-pointer">
                           <input
                             type="checkbox"
                             checked={includeStormTrack}
                             onChange={(e) => setIncludeStormTrack(e.target.checked)}
-                            className="h-4 w-4 rounded bg-gray-700 border-gray-600 text-cyan-500 focus:ring-cyan-600"
+                            className="h-4 w-4 rounded bg-gray-200 border-gray-400 text-cyan-600 focus:ring-cyan-500 dark:bg-gray-700 dark:border-gray-600 dark:text-cyan-500 dark:focus:ring-cyan-600"
                           />
                           <span>Storm Track</span>
                         </label>
                       )}
                       {hasAnomalies && (
-                        <label className="flex items-center space-x-2 text-sm text-gray-200 cursor-pointer">
+                        <label className="flex items-center space-x-2 text-sm text-gray-800 dark:text-gray-200 cursor-pointer">
                           <input
                             type="checkbox"
                             checked={includeAnomalies}
                             onChange={(e) => setIncludeAnomalies(e.target.checked)}
-                            className="h-4 w-4 rounded bg-gray-700 border-gray-600 text-cyan-500 focus:ring-cyan-600"
+                            className="h-4 w-4 rounded bg-gray-200 border-gray-400 text-cyan-600 focus:ring-cyan-500 dark:bg-gray-700 dark:border-gray-600 dark:text-cyan-500 dark:focus:ring-cyan-600"
                           />
                           <span>Anomalies</span>
                         </label>
                       )}
                       {hasStormSurge && (
-                        <label className="flex items-center space-x-2 text-sm text-gray-200 cursor-pointer">
+                        <label className="flex items-center space-x-2 text-sm text-gray-800 dark:text-gray-200 cursor-pointer">
                           <input
                             type="checkbox"
                             checked={includeStormSurge}
                             onChange={(e) => setIncludeStormSurge(e.target.checked)}
-                            className="h-4 w-4 rounded bg-gray-700 border-gray-600 text-cyan-500 focus:ring-cyan-600"
+                            className="h-4 w-4 rounded bg-gray-200 border-gray-400 text-cyan-600 focus:ring-cyan-500 dark:bg-gray-700 dark:border-gray-600 dark:text-cyan-500 dark:focus:ring-cyan-600"
                           />
                           <span>Storm Surge</span>
                         </label>
@@ -1133,52 +1353,62 @@ export default function App() {
                         </button>
                         <button
                           onClick={() => setShowHeatmap(!showHeatmap)}
-                          className={`w-full inline-flex items-center justify-center px-4 py-2 border text-sm font-medium rounded-md shadow-sm transition-colors sm:col-span-2 ${showHeatmap ? 'bg-orange-600 hover:bg-orange-700 border-transparent text-white' : 'bg-gray-700 hover:bg-gray-600 border-gray-600 text-gray-300'}`}
+                          className={`w-full inline-flex items-center justify-center px-4 py-2 border text-sm font-medium rounded-md shadow-sm transition-colors ${showHeatmap ? 'bg-orange-500 hover:bg-orange-600 dark:bg-orange-600 dark:hover:bg-orange-700 border-transparent text-white' : 'bg-gray-200 hover:bg-gray-300 dark:bg-gray-700 dark:hover:bg-gray-600 border-gray-300 dark:border-gray-600 text-gray-800 dark:text-gray-300'}`}
                         >
                           {showHeatmap ? 'Hide' : 'Show'} Temperature Heatmap
+                        </button>
+                         <button
+                          onClick={() => setShowWind(!showWind)}
+                          className={`w-full inline-flex items-center justify-center px-4 py-2 border text-sm font-medium rounded-md shadow-sm transition-colors ${showWind ? 'bg-sky-500 hover:bg-sky-600 dark:bg-sky-600 dark:hover:bg-sky-700 border-transparent text-white' : 'bg-gray-200 hover:bg-gray-300 dark:bg-gray-700 dark:hover:bg-gray-600 border-gray-300 dark:border-gray-600 text-gray-800 dark:text-gray-300'}`}
+                        >
+                          {showWind ? 'Hide' : 'Show'} Wind Direction
                         </button>
                     </div>
                 )}
                 
-                <p className="text-sm text-gray-300 truncate mt-4">{displayImage?.name || ''}</p>
+                <p className="text-sm text-gray-600 dark:text-gray-300 truncate mt-4">{displayImage?.name || ''}</p>
 
                 {hasStormTrack && (
-                  <div className="mt-4 text-xs text-left bg-gray-900/50 p-3 rounded-md">
-                    <p className="font-bold text-gray-200 mb-2">Storm Track Legend:</p>
-                    <div className="flex items-center gap-2"><div className="w-3 h-3 rounded-full" style={{backgroundColor: getIntensityColor('5')}}></div><span className="text-gray-400">Cat 3-5</span></div>
-                    <div className="flex items-center gap-2"><div className="w-3 h-3 rounded-full" style={{backgroundColor: getIntensityColor('1')}}></div><span className="text-gray-400">Cat 1-2</span></div>
-                    <div className="flex items-center gap-2"><div className="w-3 h-3 rounded-full" style={{backgroundColor: getIntensityColor('ts')}}></div><span className="text-gray-400">Tropical Storm</span></div>
+                  <div className="mt-4 text-xs text-left bg-gray-200/50 dark:bg-gray-900/50 p-3 rounded-md">
+                    <p className="font-bold text-gray-800 dark:text-gray-200 mb-2">Storm Track Legend:</p>
+                    <div className="flex items-center gap-2"><div className="w-3 h-3 rounded-full" style={{backgroundColor: getIntensityColor('5')}}></div><span className="text-gray-600 dark:text-gray-400">Cat 3-5</span></div>
+                    <div className="flex items-center gap-2"><div className="w-3 h-3 rounded-full" style={{backgroundColor: getIntensityColor('1')}}></div><span className="text-gray-600 dark:text-gray-400">Cat 1-2</span></div>
+                    <div className="flex items-center gap-2"><div className="w-3 h-3 rounded-full" style={{backgroundColor: getIntensityColor('ts')}}></div><span className="text-gray-600 dark:text-gray-400">Tropical Storm</span></div>
                   </div>
                 )}
               </div>
             ) : (
               <div className="text-center">
-                <svg className="mx-auto h-12 w-12 text-gray-500" stroke="currentColor" fill="none" viewBox="0 0 48 48" aria-hidden="true"><path d="M28 8H12a4 4 0 00-4 4v20m32-12v8m0 0v8a4 4 0 01-4 4H12a4 4 0 01-4-4v-4m32-4l-3.172-3.172a4 4 0 00-5.656 0L28 28M8 32l9.172-9.172a4 4 0 015.656 0L28 28m0 0l4 4m4-24h8m-4-4v8" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" /></svg>
-                <h3 className="mt-2 text-sm font-medium text-gray-300">No image selected</h3>
+                <svg className="mx-auto h-12 w-12 text-gray-400 dark:text-gray-500" stroke="currentColor" fill="none" viewBox="0 0 48 48" aria-hidden="true"><path d="M28 8H12a4 4 0 00-4 4v20m32-12v8m0 0v8a4 4 0 01-4 4H12a4 4 0 01-4-4v-4m32-4l-3.172-3.172a4 4 0 00-5.656 0L28 28M8 32l9.172-9.172a4 4 0 015.656 0L28 28m0 0l4 4m4-24h8m-4-4v8" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" /></svg>
+                <h3 className="mt-2 text-sm font-medium text-gray-700 dark:text-gray-300">No image selected</h3>
                 <p className="mt-1 text-sm text-gray-500">Get started by uploading an image, using our sample, or pasting a screenshot.</p>
               </div>
             )}
 
             <div className="mt-6 flex flex-col sm:flex-row gap-4">
               <input type="file" ref={fileInputRef} onChange={handleFileChange} accept="image/png, image/jpeg, image/webp" className="hidden" />
-              <button onClick={triggerFileSelect} className="w-full sm:w-auto inline-flex items-center justify-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-cyan-600 hover:bg-cyan-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-gray-800 focus:ring-cyan-500">Upload Image</button>
-              <button onClick={handleUseSample} className="w-full sm:w-auto inline-flex items-center justify-center px-4 py-2 border border-gray-600 text-sm font-medium rounded-md shadow-sm text-gray-300 bg-gray-700 hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-gray-800 focus:ring-indigo-500">Use Sample</button>
+              <button onClick={triggerFileSelect} className="w-full sm:w-auto inline-flex items-center justify-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-cyan-600 hover:bg-cyan-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-gray-100 dark:focus:ring-offset-gray-800 focus:ring-cyan-500">Upload Image</button>
+              <button onClick={handleUseSample} className="w-full sm:w-auto inline-flex items-center justify-center px-4 py-2 border border-gray-300 dark:border-gray-600 text-sm font-medium rounded-md shadow-sm text-gray-800 dark:text-gray-300 bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-gray-100 dark:focus:ring-offset-gray-800 focus:ring-indigo-500">Use Sample</button>
             </div>
           </div>
 
           <div className="flex flex-col">
-            <button onClick={handleAnalyzeClick} disabled={!selectedImage || isLoading} className="w-full mb-4 inline-flex items-center justify-center px-6 py-3 border border-transparent text-base font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-gray-800 focus:ring-indigo-500 disabled:bg-gray-500 disabled:cursor-not-allowed">
+            <button onClick={handleAnalyzeClick} disabled={!selectedImage || isLoading} className="w-full mb-4 inline-flex items-center justify-center px-6 py-3 border border-transparent text-base font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-gray-100 dark:focus:ring-offset-gray-800 focus:ring-indigo-500 disabled:bg-gray-500 disabled:cursor-not-allowed">
               {isLoading ? 'Analyzing...' : 'Analyze Weather'}
             </button>
-            <div className="bg-gray-700/50 rounded-lg p-6 flex-grow min-h-[200px] flex flex-col">
+            <div className="bg-gray-50 dark:bg-gray-700/50 rounded-lg p-6 flex-grow min-h-[200px] flex flex-col">
               <div className="flex items-start justify-between mb-4 gap-4 flex-wrap">
                  <div className="flex items-center gap-3">
-                   <h2 className="text-xl font-semibold text-gray-200">Meteorological Analysis</h2>
-                   {analysis && !isLoading && (<button onClick={() => setIsShareModalOpen(true)} title="Share Analysis" className="text-gray-400 hover:text-cyan-400 transition-colors"><svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path d="M15 8a3 3 0 10-2.977-2.63l-4.94 2.47a3 3 0 100 4.319l4.94 2.47a3 3 0 10.895-1.789l-4.94-2.47a3.027 3.027 0 000-.74l4.94-2.47C13.456 7.68 14.19 8 15 8z" /></svg></button>)}
+                   <h2 className="text-xl font-semibold text-gray-800 dark:text-gray-200">Meteorological Analysis</h2>
+                   {analysis && !isLoading && (<button onClick={() => setIsShareModalOpen(true)} title="Share Analysis" className="text-gray-500 hover:text-cyan-500 dark:text-gray-400 dark:hover:text-cyan-400 transition-colors"><svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path d="M15 8a3 3 0 10-2.977-2.63l-4.94 2.47a3 3 0 100 4.319l4.94 2.47a3 3 0 10.895-1.789l-4.94-2.47a3.027 3.027 0 000-.74l4.94-2.47C13.456 7.68 14.19 8 15 8z" /></svg></button>)}
                  </div>
                  <div className="flex items-center gap-x-4 gap-y-2 flex-wrap justify-end">
                   {analysis && !isLoading && (<>
-                      <LocationDisplay location={analysis.location} />
+                      <LocationDisplay 
+                        location={analysis.location} 
+                        onMapClick={() => setIsMapModalOpen(true)} 
+                        isMapAvailable={!!analysis.centerCoordinates} 
+                      />
                       <TemperatureDisplay temp={analysis.temperature} />
                       <WindSpeedDisplay speed={analysis.windSpeed} />
                       <PrecipitationDisplay chance={analysis.chanceOfPrecipitation} />
@@ -1190,10 +1420,10 @@ export default function App() {
               </div>
               
               <div className="flex-grow">
-                {isLoading && (<div className="flex items-center justify-center h-full"><div className="animate-spin rounded-full h-16 w-16 border-t-2 border-b-2 border-cyan-400"></div></div>)}
-                {error && <div className="text-red-400 bg-red-900/50 p-3 rounded-md">{error}</div>}
-                {analysis && (<div className="prose prose-invert max-w-none text-gray-300 whitespace-pre-wrap">{analysis.explanation}</div>)}
-                {!isLoading && !analysis && !error && (<p className="text-gray-400">Your weather analysis will appear here.</p>)}
+                {isLoading && (<div className="flex items-center justify-center h-full"><div className="animate-spin rounded-full h-16 w-16 border-t-2 border-b-2 border-cyan-500 dark:border-cyan-400"></div></div>)}
+                {error && <div className="text-red-600 dark:text-red-400 bg-red-100 dark:bg-red-900/50 p-3 rounded-md">{error}</div>}
+                {analysis && (<div className="prose dark:prose-invert max-w-none text-gray-700 dark:text-gray-300 whitespace-pre-wrap">{analysis.explanation}</div>)}
+                {!isLoading && !analysis && !error && (<p className="text-gray-500 dark:text-gray-400">Your weather analysis will appear here.</p>)}
               </div>
             </div>
           </div>
@@ -1206,6 +1436,12 @@ export default function App() {
         visualSummaryImage={visualSummary}
         composedOverlayImage={composedOverlayImage}
         selectedImage={selectedImage}
+        theme={theme}
+      />
+       <MapModal 
+        isOpen={isMapModalOpen}
+        onClose={() => setIsMapModalOpen(false)}
+        analysis={analysis}
       />
     </div>
   );
