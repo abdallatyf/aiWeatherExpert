@@ -1,13 +1,4 @@
-
 import { GoogleGenAI } from "@google/genai";
-
-const API_KEY = process.env.API_KEY;
-
-if (!API_KEY) {
-    throw new Error("API_KEY environment variable not set");
-}
-
-const ai = new GoogleGenAI({ apiKey: API_KEY });
 
 /**
  * Generates a weather explanation from a satellite image.
@@ -16,6 +7,14 @@ const ai = new GoogleGenAI({ apiKey: API_KEY });
  * @returns A promise that resolves to the weather explanation text.
  */
 export async function explainWeatherFromImage(mimeType: string, imageData: string): Promise<string> {
+    const API_KEY = process.env.API_KEY;
+
+    if (!API_KEY) {
+        throw new Error("API_KEY environment variable not set. Please set it up.");
+    }
+
+    const ai = new GoogleGenAI({ apiKey: API_KEY });
+    
     try {
         const imagePart = {
             inlineData: {
