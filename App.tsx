@@ -19,29 +19,35 @@ const ShareModal = ({
   onClose, 
   analysisData, 
   visualSummaryImage, 
-  originalImageFile 
+  selectedImage
 }: { 
   isOpen: boolean, 
   onClose: () => void, 
   analysisData: WeatherAnalysis | null, 
   visualSummaryImage: { base64: string, mimeType: string } | null,
-  originalImageFile: File | null,
+  selectedImage: ImageFile | null,
 }) => {
   const [copyButtonText, setCopyButtonText] = useState('Copy');
+  const [shareMode, setShareMode] = useState<'analysis' | 'original' | 'visual'>('analysis');
   
   useEffect(() => {
     if (isOpen) {
       setCopyButtonText('Copy');
+      // Set a smart default share mode
+      if (visualSummaryImage) {
+        setShareMode('visual');
+      } else {
+        setShareMode('analysis');
+      }
     }
-  }, [isOpen]);
+  }, [isOpen, visualSummaryImage]);
 
   if (!isOpen || !analysisData) return null;
 
   const { location, temperature, windDirection, windSpeed, explanation, chanceOfPrecipitation, humidity, uvIndex } = analysisData;
-  const hasVisualSummary = visualSummaryImage && originalImageFile;
 
-  const summary = `Weather for ${location}: Temp: ${Math.round(temperature)}°C, Wind: ${Math.round(windSpeed)} km/h ${windDirection}, Precip: ${chanceOfPrecipitation}%, Humidity: ${humidity}%, UV: ${uvIndex}. Analysis: ${explanation.substring(0, 100)}...`;
-  const encodedSummary = encodeURIComponent(summary);
+  const summaryText = `Weather for ${location}: Temp: ${Math.round(temperature)}°C, Wind: ${Math.round(windSpeed)} km/h ${windDirection}, Precip: ${chanceOfPrecipitation}%, Humidity: ${humidity}%, UV: ${uvIndex}. Analysis: ${explanation.substring(0, 100)}...`;
+  const encodedSummary = encodeURIComponent(summaryText);
   const shareLink = `https://www.google.com/search?q=${encodedSummary}`;
   
   const handleCopyLink = () => {
@@ -53,34 +59,63 @@ const ShareModal = ({
     });
   };
 
-  const handleDownloadImage = () => {
+  const handleDownloadVisualSummary = () => {
     if (!visualSummaryImage) return;
     const link = document.createElement('a');
     link.href = `data:${visualSummaryImage.mimeType};base64,${visualSummaryImage.base64}`;
-    const newFilename = `visual_summary_${originalImageFile?.name.split('.')[0] || 'weather'}.png`;
+    const newFilename = `visual_summary_${selectedImage?.file.name.split('.')[0] || 'weather'}.png`;
     link.download = newFilename;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
   };
   
-  const handleShareImage = async () => {
-    if (!visualSummaryImage || !originalImageFile || !navigator.share) return;
+  const handleShareVisualSummary = async () => {
+    if (!visualSummaryImage || !selectedImage || !navigator.share) return;
     
-    const newFilename = `visual_summary_${originalImageFile.name.split('.')[0]}.png`;
+    const newFilename = `visual_summary_${selectedImage.file.name.split('.')[0]}.png`;
     const fileToShare = base64ToFile(visualSummaryImage.base64, newFilename, visualSummaryImage.mimeType);
 
     try {
       await navigator.share({
         files: [fileToShare],
         title: `Weather Analysis for ${location}`,
-        text: summary,
+        text: summaryText,
       });
     } catch (error) {
-      console.error('Error sharing the image:', error);
+      console.error('Error sharing the visual summary:', error);
     }
   };
 
+  const handleDownloadOriginalImage = () => {
+    if (!selectedImage) return;
+    const link = document.createElement('a');
+    link.href = `data:${selectedImage.mimeType};base64,${selectedImage.base64}`;
+    link.download = selectedImage.file.name;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+  
+  const handleShareOriginalImage = async () => {
+    if (!selectedImage || !navigator.share) return;
+    
+    try {
+      await navigator.share({
+        files: [selectedImage.file],
+        title: `Weather Image: ${selectedImage.file.name}`,
+        text: `Original weather satellite image for ${location}.`,
+      });
+    } catch (error) {
+      console.error('Error sharing the original image:', error);
+    }
+  };
+
+  const getTabClass = (mode: 'analysis' | 'original' | 'visual') => {
+    return shareMode === mode
+      ? 'border-cyan-400 text-cyan-400'
+      : 'border-transparent text-gray-400 hover:text-white hover:border-gray-500';
+  };
 
   return (
     <div 
@@ -104,38 +139,39 @@ const ShareModal = ({
           </svg>
         </button>
         <h3 id="share-modal-title" className="text-2xl font-bold text-cyan-400 mb-4 text-center">
-          {hasVisualSummary ? 'Share Visual Summary' : 'Share Analysis'}
+          Share
         </h3>
-        {hasVisualSummary ? (
-          <div className="space-y-4 text-center">
-            <img 
-              src={`data:${visualSummaryImage.mimeType};base64,${visualSummaryImage.base64}`} 
-              alt="AI-generated visual summary" 
-              className="rounded-lg border-2 border-gray-600 max-h-64 w-auto mx-auto"
-            />
-            <p className="text-sm text-gray-400">Share this AI-enhanced image with your analysis baked in.</p>
-            <div className="flex flex-col gap-3 pt-2">
-              <button
-                onClick={handleShareImage}
-                disabled={!navigator.share}
-                className="w-full inline-flex items-center justify-center px-4 py-2 text-sm font-semibold rounded-md shadow-sm transition-colors duration-200 bg-cyan-600 hover:bg-cyan-700 text-white disabled:bg-gray-500 disabled:cursor-not-allowed"
-                title={!navigator.share ? 'Web Share API not supported in your browser' : 'Share image using native dialog'}
-              >
-                Share Image
-              </button>
-              <button
-                onClick={handleDownloadImage}
-                className="w-full inline-flex items-center justify-center px-4 py-2 text-sm font-semibold rounded-md shadow-sm transition-colors duration-200 bg-gray-600 hover:bg-gray-700 text-white"
-              >
-                Download Image
-              </button>
-            </div>
-          </div>
-        ) : (
-          <div className="space-y-6">
+        
+        <div className="border-b border-gray-700 mb-4">
+            <nav className="-mb-px flex justify-center space-x-6" aria-label="Tabs">
+                <button
+                    onClick={() => setShareMode('analysis')}
+                    className={`whitespace-nowrap py-2 px-1 border-b-2 font-medium text-sm transition-colors ${getTabClass('analysis')}`}
+                >
+                    Analysis
+                </button>
+                <button
+                    onClick={() => setShareMode('original')}
+                    className={`whitespace-nowrap py-2 px-1 border-b-2 font-medium text-sm transition-colors ${getTabClass('original')}`}
+                    disabled={!selectedImage}
+                >
+                    Original Image
+                </button>
+                <button
+                    onClick={() => setShareMode('visual')}
+                    className={`whitespace-nowrap py-2 px-1 border-b-2 font-medium text-sm transition-colors ${getTabClass('visual')} disabled:text-gray-600 disabled:cursor-not-allowed disabled:border-transparent`}
+                    disabled={!visualSummaryImage}
+                >
+                    Visual Summary
+                </button>
+            </nav>
+        </div>
+
+        {shareMode === 'analysis' && (
+          <div className="space-y-6 animate-fade-in">
             <div className="flex flex-col items-center justify-center bg-gray-700 p-4 rounded-lg">
               <img src={`https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${encodedSummary}&bgcolor=374151&color=e5e7eb&qzone=1`} alt="QR Code for weather analysis" className="rounded-md" />
-              <p className="mt-3 text-sm text-gray-300">Scan QR code to share</p>
+              <p className="mt-3 text-sm text-gray-300">Scan QR code to share analysis</p>
             </div>
             <div>
               <label htmlFor="share-link" className="block text-sm font-medium text-gray-300 mb-2 text-center">Or Copy Link</label>
@@ -167,13 +203,79 @@ const ShareModal = ({
             </div>
           </div>
         )}
+
+        {shareMode === 'visual' && visualSummaryImage && (
+          <div className="space-y-4 text-center animate-fade-in">
+            <img 
+              src={`data:${visualSummaryImage.mimeType};base64,${visualSummaryImage.base64}`} 
+              alt="AI-generated visual summary" 
+              className="rounded-lg border-2 border-gray-600 max-h-64 w-auto mx-auto"
+            />
+            <p className="text-sm text-gray-400">Share this AI-enhanced image with your analysis baked in.</p>
+            <div className="flex flex-col gap-3 pt-2">
+              <button
+                onClick={handleShareVisualSummary}
+                disabled={!navigator.share}
+                className="w-full inline-flex items-center justify-center px-4 py-2 text-sm font-semibold rounded-md shadow-sm transition-colors duration-200 bg-cyan-600 hover:bg-cyan-700 text-white disabled:bg-gray-500 disabled:cursor-not-allowed"
+                title={!navigator.share ? 'Web Share API not supported in your browser' : 'Share image using native dialog'}
+              >
+                Share Image
+              </button>
+              <button
+                onClick={handleDownloadVisualSummary}
+                className="w-full inline-flex items-center justify-center px-4 py-2 text-sm font-semibold rounded-md shadow-sm transition-colors duration-200 bg-gray-600 hover:bg-gray-700 text-white"
+              >
+                Download Image
+              </button>
+              <button
+                onClick={handleDownloadVisualSummary}
+                className="w-full inline-flex items-center justify-center px-4 py-2 text-sm font-semibold rounded-md shadow-sm transition-colors duration-200 bg-gray-600 hover:bg-gray-700 text-white"
+              >
+                Save
+              </button>
+            </div>
+          </div>
+        )}
+
+        {shareMode === 'original' && selectedImage && (
+          <div className="space-y-4 text-center animate-fade-in">
+            <img 
+              src={`data:${selectedImage.mimeType};base64,${selectedImage.base64}`} 
+              alt="Original satellite image" 
+              className="rounded-lg border-2 border-gray-600 max-h-64 w-auto mx-auto"
+            />
+            <p className="text-sm text-gray-400">Share the original unprocessed satellite image.</p>
+            <div className="flex flex-col gap-3 pt-2">
+              <button
+                onClick={handleShareOriginalImage}
+                disabled={!navigator.share}
+                className="w-full inline-flex items-center justify-center px-4 py-2 text-sm font-semibold rounded-md shadow-sm transition-colors duration-200 bg-cyan-600 hover:bg-cyan-700 text-white disabled:bg-gray-500 disabled:cursor-not-allowed"
+                title={!navigator.share ? 'Web Share API not supported in your browser' : 'Share image using native dialog'}
+              >
+                Share Image
+              </button>
+              <button
+                onClick={handleDownloadOriginalImage}
+                className="w-full inline-flex items-center justify-center px-4 py-2 text-sm font-semibold rounded-md shadow-sm transition-colors duration-200 bg-gray-600 hover:bg-gray-700 text-white"
+              >
+                Download Image
+              </button>
+            </div>
+          </div>
+        )}
+
       </div>
        <style>{`
         @keyframes fade-in-scale {
           from { opacity: 0; transform: scale(0.95); }
           to { opacity: 1; transform: scale(1); }
         }
+        @keyframes fade-in {
+          from { opacity: 0; }
+          to { opacity: 1; }
+        }
         .animate-fade-in-scale { animation: fade-in-scale 0.2s ease-out forwards; }
+        .animate-fade-in { animation: fade-in 0.3s ease-out forwards; }
       `}</style>
     </div>
   );
@@ -270,6 +372,25 @@ const WindDirectionArrow = ({ direction }: { direction: string }) => {
   );
 };
 
+const getTemperatureColor = (temp: number): string => {
+  if (temp <= 0) return 'rgba(100, 100, 255, 0.4)'; // Cold Blue
+  if (temp <= 10) return 'rgba(100, 200, 255, 0.4)'; // Cool Blue
+  if (temp <= 18) return 'rgba(150, 255, 150, 0.4)'; // Mild Green
+  if (temp <= 25) return 'rgba(255, 255, 100, 0.4)'; // Warm Yellow
+  if (temp <= 32) return 'rgba(255, 180, 50, 0.4)'; // Hot Orange
+  return 'rgba(255, 100, 100, 0.45)'; // Very Hot Red
+};
+
+const TemperatureHeatmapDisplay = ({ temperature }: { temperature: number }) => {
+  const color = getTemperatureColor(temperature);
+  return (
+    <div
+      className="absolute top-0 left-0 w-full h-full pointer-events-none transition-opacity duration-500"
+      style={{ backgroundColor: color }}
+      title={`Heatmap representing avg. temp of ${Math.round(temperature)}°C`}
+    />
+  );
+};
 
 const getIntensityColor = (intensity: string) => {
   const lowerIntensity = intensity.toLowerCase();
@@ -331,7 +452,11 @@ const StormTrackDisplay = ({ track, dimensions, forecastHour }: { track: StormTr
   );
 };
 
-const AnomalyStreaksDisplay = ({ streaks, dimensions }: { streaks: AnomalyStreak[], dimensions: { width: number, height: number } }) => {
+const AnomalyStreaksDisplay = ({ streaks, dimensions, setTooltip }: {
+  streaks: AnomalyStreak[],
+  dimensions: { width: number, height: number },
+  setTooltip: React.Dispatch<React.SetStateAction<{ visible: boolean; content: string; x: number; y: number }>>
+}) => {
   if (!streaks || streaks.length === 0 || dimensions.width === 0) return null;
 
   return (
@@ -348,17 +473,20 @@ const AnomalyStreaksDisplay = ({ streaks, dimensions }: { streaks: AnomalyStreak
           stroke-linecap: round;
         }
       `}</style>
-      <svg className="absolute top-0 left-0 w-full h-full pointer-events-none" viewBox={`0 0 ${dimensions.width} ${dimensions.height}`}>
+      <svg className="absolute top-0 left-0 w-full h-full" viewBox={`0 0 ${dimensions.width} ${dimensions.height}`}>
         {streaks.map((streak, index) => {
           const pointsStr = streak.points.map(p => `${p.x / 100 * dimensions.width},${p.y / 100 * dimensions.height}`).join(' ');
           return (
             <polygon
               key={index}
               points={pointsStr}
-              className="anomaly-streak"
+              className="anomaly-streak cursor-pointer"
               fill="rgba(250, 204, 21, 0.25)"
               stroke="#facc15"
               strokeWidth="2"
+              onMouseEnter={(e) => setTooltip({ visible: true, content: streak.description, x: e.clientX, y: e.clientY })}
+              onMouseMove={(e) => setTooltip(prev => ({ ...prev, x: e.clientX, y: e.clientY }))}
+              onMouseLeave={() => setTooltip({ visible: false, content: '', x: 0, y: 0 })}
             >
               <title>{streak.description}</title>
             </polygon>
@@ -419,6 +547,19 @@ const StormSurgeDisplay = ({ surge, dimensions }: { surge: StormSurgeForecast, d
   );
 };
 
+const Tooltip = ({ visible, content, x, y }: { visible: boolean; content: string; x: number; y: number }) => {
+  if (!visible) return null;
+  return (
+    <div
+      className="fixed z-50 p-2 text-sm text-white bg-gray-900 bg-opacity-80 rounded-md shadow-lg pointer-events-none transition-opacity max-w-xs"
+      style={{ top: y + 15, left: x + 15 }}
+    >
+      {content}
+    </div>
+  );
+};
+
+
 export default function App() {
   const [selectedImage, setSelectedImage] = useState<ImageFile | null>(null);
   const [analysis, setAnalysis] = useState<WeatherAnalysis | null>(null);
@@ -431,10 +572,43 @@ export default function App() {
   const [isGeneratingVisual, setIsGeneratingVisual] = useState<boolean>(false);
   const [showOriginal, setShowOriginal] = useState<boolean>(true);
   const [forecastHour, setForecastHour] = useState<number>(0);
+  const [showHeatmap, setShowHeatmap] = useState<boolean>(false);
+  const [tooltip, setTooltip] = useState<{ visible: boolean; content: string; x: number; y: number }>({ visible: false, content: '', x: 0, y: 0 });
 
+  const [includeStormTrack, setIncludeStormTrack] = useState<boolean>(true);
+  const [includeAnomalies, setIncludeAnomalies] = useState<boolean>(true);
+  const [includeStormSurge, setIncludeStormSurge] = useState<boolean>(true);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const imageContainerRef = useRef<HTMLDivElement>(null);
+  
+  useEffect(() => {
+    try {
+      const savedAnalysisJSON = localStorage.getItem('latestWeatherAnalysis');
+      const savedImageJSON = localStorage.getItem('latestWeatherImage');
+
+      if (savedAnalysisJSON && savedImageJSON) {
+        const savedAnalysis: WeatherAnalysis = JSON.parse(savedAnalysisJSON);
+        const savedImageInfo: { base64: string; mimeType: string; fileName: string } = JSON.parse(savedImageJSON);
+
+        if (savedAnalysis && savedImageInfo) {
+            const imageFile = base64ToFile(savedImageInfo.base64, savedImageInfo.fileName, savedImageInfo.mimeType);
+            
+            setAnalysis(savedAnalysis);
+            setSelectedImage({
+                file: imageFile,
+                base64: savedImageInfo.base64,
+                mimeType: savedImageInfo.mimeType,
+            });
+        }
+      }
+    } catch (e) {
+      console.error("Failed to load saved analysis from localStorage", e);
+      // Clear potentially corrupted data
+      localStorage.removeItem('latestWeatherAnalysis');
+      localStorage.removeItem('latestWeatherImage');
+    }
+  }, []);
 
   useEffect(() => {
     const resizeObserver = new ResizeObserver(entries => {
@@ -464,6 +638,10 @@ export default function App() {
     setVisualSummary(null);
     setShowOriginal(true);
     setForecastHour(0);
+    setShowHeatmap(false);
+    setIncludeStormTrack(true);
+    setIncludeAnomalies(true);
+    setIncludeStormSurge(true);
   }, []);
 
   const handlePaste = useCallback((event: ClipboardEvent) => {
@@ -517,6 +695,12 @@ export default function App() {
         setAnalysis(null);
       } else {
         setAnalysis(result);
+        localStorage.setItem('latestWeatherAnalysis', JSON.stringify(result));
+        localStorage.setItem('latestWeatherImage', JSON.stringify({
+          base64: selectedImage.base64,
+          mimeType: selectedImage.mimeType,
+          fileName: selectedImage.file.name
+        }));
       }
     } catch (err: any) {
       setError(err.message || 'An unexpected error occurred.');
@@ -541,84 +725,118 @@ export default function App() {
     setError(null);
 
     try {
-        const { width, height } = imageDimensions;
+      const { width, height } = imageDimensions;
+      const originalImg = new Image();
 
-        let overlaysSVG = '';
-        if (analysis.stormTrack && analysis.stormTrack.length > 0) {
-            const points = analysis.stormTrack.map(p => `${p.x / 100 * width},${p.y / 100 * height}`).join(' ');
-            overlaysSVG += `<polyline points="${points}" fill="none" stroke="rgba(255, 255, 255, 0.7)" stroke-width="2" stroke-dasharray="5,5" />`;
+      const getComposedImageBase64 = () => new Promise<string>((resolve, reject) => {
+        originalImg.onload = () => {
+          const canvas = document.createElement('canvas');
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext('2d');
+          if (!ctx) {
+            reject(new Error("Could not get canvas context"));
+            return;
+          }
+
+          ctx.drawImage(originalImg, 0, 0, width, height);
+
+          if (includeStormTrack && analysis.stormTrack && analysis.stormTrack.length > 0) {
+            ctx.beginPath();
+            const firstPoint = analysis.stormTrack[0];
+            ctx.moveTo(firstPoint.x / 100 * width, firstPoint.y / 100 * height);
             analysis.stormTrack.forEach(point => {
-                overlaysSVG += `<circle cx="${point.x / 100 * width}" cy="${point.y / 100 * height}" r="6" fill="${getIntensityColor(point.intensity)}" stroke="rgba(0, 0, 0, 0.5)" stroke-width="1" />`;
+              ctx.lineTo(point.x / 100 * width, point.y / 100 * height);
             });
-        }
-        if (analysis.anomalyStreaks && analysis.anomalyStreaks.length > 0) {
-             analysis.anomalyStreaks.forEach(streak => {
-                const pointsStr = streak.points.map(p => `${p.x / 100 * width},${p.y / 100 * height}`).join(' ');
-                overlaysSVG += `<polygon points="${pointsStr}" fill="rgba(250, 204, 21, 0.25)" stroke="#facc15" stroke-width="2" />`;
+            ctx.strokeStyle = "rgba(255, 255, 255, 0.7)";
+            ctx.lineWidth = 2;
+            ctx.setLineDash([5, 5]);
+            ctx.stroke();
+            ctx.setLineDash([]);
+
+            analysis.stormTrack.forEach(point => {
+              ctx.beginPath();
+              ctx.arc(point.x / 100 * width, point.y / 100 * height, 6, 0, 2 * Math.PI);
+              ctx.fillStyle = getIntensityColor(point.intensity);
+              ctx.strokeStyle = "rgba(0, 0, 0, 0.5)";
+              ctx.lineWidth = 1;
+              ctx.fill();
+              ctx.stroke();
             });
-        }
+          }
 
-        if (analysis.stormSurge && analysis.stormSurge.affectedArea.length > 0) {
-            const surgePoints = analysis.stormSurge.affectedArea.map(p => `${p.x / 100 * width},${p.y / 100 * height}`).join(' ');
-            overlaysSVG += `<polygon points="${surgePoints}" fill="rgba(220, 38, 38, 0.4)" stroke="rgba(255, 100, 100, 0.8)" stroke-width="1.5" />`;
+          if (includeAnomalies && analysis.anomalyStreaks && analysis.anomalyStreaks.length > 0) {
+            analysis.anomalyStreaks.forEach(streak => {
+              ctx.beginPath();
+              const firstPoint = streak.points[0];
+              ctx.moveTo(firstPoint.x / 100 * width, firstPoint.y / 100 * height);
+              for (let i = 1; i < streak.points.length; i++) {
+                const point = streak.points[i];
+                ctx.lineTo(point.x / 100 * width, point.y / 100 * height);
+              }
+              ctx.closePath();
+              ctx.fillStyle = "rgba(250, 204, 21, 0.25)";
+              ctx.strokeStyle = "#facc15";
+              ctx.lineWidth = 2;
+              ctx.fill();
+              ctx.stroke();
+            });
+          }
 
-            const centroid = analysis.stormSurge.affectedArea.reduce((acc, p) => ({
-                x: acc.x + p.x / 100 * width,
-                y: acc.y + p.y / 100 * height
+          if (includeStormSurge && analysis.stormSurge && analysis.stormSurge.affectedArea.length > 0) {
+            const surgeArea = analysis.stormSurge.affectedArea;
+            ctx.beginPath();
+            ctx.moveTo(surgeArea[0].x / 100 * width, surgeArea[0].y / 100 * height);
+            for (let i = 1; i < surgeArea.length; i++) {
+              ctx.lineTo(surgeArea[i].x / 100 * width, surgeArea[i].y / 100 * height);
+            }
+            ctx.closePath();
+            ctx.fillStyle = "rgba(220, 38, 38, 0.4)";
+            ctx.strokeStyle = "rgba(255, 100, 100, 0.8)";
+            ctx.lineWidth = 1.5;
+            ctx.fill();
+            ctx.stroke();
+
+            const centroid = surgeArea.reduce((acc, p) => ({
+              x: acc.x + p.x / 100 * width,
+              y: acc.y + p.y / 100 * height
             }), { x: 0, y: 0 });
-            centroid.x /= analysis.stormSurge.affectedArea.length;
-            centroid.y /= analysis.stormSurge.affectedArea.length;
+            centroid.x /= surgeArea.length;
+            centroid.y /= surgeArea.length;
 
-            overlaysSVG += `<text x="${centroid.x}" y="${centroid.y}" text-anchor="middle" dominant-baseline="central" fill="white" font-family="sans-serif" font-size="16" font-weight="bold" style="paint-order: stroke; stroke: black; stroke-width: 2px; stroke-linejoin: round;">${analysis.stormSurge.surgeHeight}m Surge</text>`;
-        }
+            ctx.font = 'bold 16px sans-serif';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.strokeStyle = 'black';
+            ctx.lineWidth = 3;
+            ctx.strokeText(`${analysis.stormSurge!.surgeHeight}m Surge`, centroid.x, centroid.y);
+            ctx.fillStyle = 'white';
+            ctx.fillText(`${analysis.stormSurge!.surgeHeight}m Surge`, centroid.x, centroid.y);
+          }
 
+          const pngDataUrl = canvas.toDataURL('image/png');
+          resolve(pngDataUrl.split(',')[1]);
+        };
 
-        const fullSVG = `
-            <svg width="${width}" height="${height}" xmlns="http://www.w3.org/2000/svg">
-                <image href="${`data:${selectedImage.mimeType};base64,${selectedImage.base64}`}" x="0" y="0" width="${width}" height="${height}" />
-                ${overlaysSVG}
-            </svg>
-        `;
+        originalImg.onerror = () => {
+          reject(new Error("Failed to load original image for composition."));
+        };
 
-        const svgBlob = new Blob([fullSVG], { type: 'image/svg+xml;charset=utf-8' });
-        const svgUrl = URL.createObjectURL(svgBlob);
-        const img = new Image();
+        originalImg.src = `data:${selectedImage.mimeType};base64,${selectedImage.base64}`;
+      });
 
-        const getPngDataUrl = () => new Promise<string>((resolve, reject) => {
-            img.onload = () => {
-                const canvas = document.createElement('canvas');
-                canvas.width = width;
-                canvas.height = height;
-                const ctx = canvas.getContext('2d');
-                if (!ctx) {
-                    reject(new Error("Could not get canvas context"));
-                    return;
-                }
-                ctx.drawImage(img, 0, 0, width, height);
-                URL.revokeObjectURL(svgUrl);
-                resolve(canvas.toDataURL('image/png'));
-            };
-            img.onerror = () => {
-                URL.revokeObjectURL(svgUrl);
-                reject(new Error("Failed to load composite SVG image for conversion."));
-            };
-            img.src = svgUrl;
-        });
+      const composedBase64 = await getComposedImageBase64();
+      const generatedImageBase64 = await generateVisualSummaryImage(composedBase64, 'image/png', analysis);
 
-        const pngDataUrl = await getPngDataUrl();
-        const pngBase64 = pngDataUrl.split(',')[1];
-        
-        const generatedImageBase64 = await generateVisualSummaryImage(pngBase64, 'image/png', analysis);
-        
-        setVisualSummary({ base64: generatedImageBase64, mimeType: 'image/png' });
-        setShowOriginal(false);
+      setVisualSummary({ base64: generatedImageBase64, mimeType: 'image/png' });
+      setShowOriginal(false);
 
     } catch (err: any) {
-        setError(err.message || 'Failed to generate visual summary.');
+      setError(err.message || 'Failed to generate visual summary.');
     } finally {
-        setIsGeneratingVisual(false);
+      setIsGeneratingVisual(false);
     }
-}, [selectedImage, analysis, imageDimensions]);
+  }, [selectedImage, analysis, imageDimensions, includeStormTrack, includeAnomalies, includeStormSurge]);
 
   const triggerFileSelect = () => fileInputRef.current?.click();
   const hasStormTrack = analysis?.stormTrack && analysis.stormTrack.length > 0;
@@ -660,6 +878,7 @@ export default function App() {
             border: 2px solid #fff;
         }
       `}</style>
+      <Tooltip visible={tooltip.visible} content={tooltip.content} x={tooltip.x} y={tooltip.y} />
       <div className="w-full max-w-4xl mx-auto">
         <header className="text-center mb-8">
           <h1 className="text-4xl sm:text-5xl font-bold text-cyan-400 mb-2">AI Weather Explainer</h1>
@@ -679,8 +898,11 @@ export default function App() {
                     onLoad={() => setIsHiResImageLoaded(true)}
                   />
                   {showOriginal && hasStormTrack && <StormTrackDisplay track={analysis.stormTrack!} dimensions={imageDimensions} forecastHour={forecastHour} />}
-                  {showOriginal && hasAnomalies && <AnomalyStreaksDisplay streaks={analysis.anomalyStreaks!} dimensions={imageDimensions} />}
+                  {showOriginal && hasAnomalies && <AnomalyStreaksDisplay streaks={analysis.anomalyStreaks!} dimensions={imageDimensions} setTooltip={setTooltip} />}
                   {showOriginal && hasStormSurge && <StormSurgeDisplay surge={analysis.stormSurge!} dimensions={imageDimensions} />}
+                  {showOriginal && showHeatmap && analysis && (
+                    <TemperatureHeatmapDisplay temperature={analysis.temperature} />
+                  )}
                 </div>
 
                 {hasStormTrack && showOriginal && (
@@ -701,24 +923,71 @@ export default function App() {
                   </div>
                 )}
 
+                {analysis && hasOverlays && (
+                  <div className="mt-4 p-3 bg-gray-900/50 rounded-lg">
+                    <p className="text-sm font-medium text-gray-300 mb-2">Include in Visual Summary:</p>
+                    <div className="flex flex-wrap gap-x-6 gap-y-2">
+                      {hasStormTrack && (
+                        <label className="flex items-center space-x-2 text-sm text-gray-200 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={includeStormTrack}
+                            onChange={(e) => setIncludeStormTrack(e.target.checked)}
+                            className="h-4 w-4 rounded bg-gray-700 border-gray-600 text-cyan-500 focus:ring-cyan-600"
+                          />
+                          <span>Storm Track</span>
+                        </label>
+                      )}
+                      {hasAnomalies && (
+                        <label className="flex items-center space-x-2 text-sm text-gray-200 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={includeAnomalies}
+                            onChange={(e) => setIncludeAnomalies(e.target.checked)}
+                            className="h-4 w-4 rounded bg-gray-700 border-gray-600 text-cyan-500 focus:ring-cyan-600"
+                          />
+                          <span>Anomalies</span>
+                        </label>
+                      )}
+                      {hasStormSurge && (
+                        <label className="flex items-center space-x-2 text-sm text-gray-200 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={includeStormSurge}
+                            onChange={(e) => setIncludeStormSurge(e.target.checked)}
+                            className="h-4 w-4 rounded bg-gray-700 border-gray-600 text-cyan-500 focus:ring-cyan-600"
+                          />
+                          <span>Storm Surge</span>
+                        </label>
+                      )}
+                    </div>
+                  </div>
+                )}
+
                 {analysis && (
-                    <div className="flex flex-col sm:flex-row gap-2 mt-4">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-4">
                         <button
                             onClick={handleGenerateVisualSummary}
                             disabled={isLoading || isGeneratingVisual || !hasOverlays}
-                            className="flex-1 inline-flex items-center justify-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-purple-600 hover:bg-purple-700 disabled:bg-gray-500 disabled:cursor-not-allowed"
+                            className="w-full inline-flex items-center justify-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-purple-600 hover:bg-purple-700 disabled:bg-gray-500 disabled:cursor-not-allowed"
                             title={!hasOverlays ? "No overlays to generate a summary from" : "Use Nano-Banana to generate an enhanced visual"}
                         >
                             {isGeneratingVisual ? 'Generating...' : 'Visualize with Nano-Banana'}
                         </button>
-                        {visualSummary && (
+                        {visualSummary ? (
                             <button
                                 onClick={() => setShowOriginal(!showOriginal)}
-                                className="flex-1 inline-flex items-center justify-center px-4 py-2 border border-gray-600 text-sm font-medium rounded-md shadow-sm text-gray-300 bg-gray-700 hover:bg-gray-600"
+                                className="w-full inline-flex items-center justify-center px-4 py-2 border border-gray-600 text-sm font-medium rounded-md shadow-sm text-gray-300 bg-gray-700 hover:bg-gray-600"
                             >
                                 {showOriginal ? 'Show Visual Summary' : 'Show Original'}
                             </button>
-                        )}
+                        ): <div className="hidden sm:block"></div>}
+                        <button
+                          onClick={() => setShowHeatmap(!showHeatmap)}
+                          className={`w-full inline-flex items-center justify-center px-4 py-2 border text-sm font-medium rounded-md shadow-sm transition-colors sm:col-span-2 ${showHeatmap ? 'bg-teal-600 hover:bg-teal-700 border-transparent text-white' : 'bg-gray-700 hover:bg-gray-600 border-gray-600 text-gray-300'}`}
+                        >
+                          {showHeatmap ? 'Hide' : 'Show'} Temperature Heatmap
+                        </button>
                     </div>
                 )}
                 
@@ -786,7 +1055,7 @@ export default function App() {
         onClose={() => setIsShareModalOpen(false)} 
         analysisData={analysis}
         visualSummaryImage={visualSummary}
-        originalImageFile={selectedImage?.file || null}
+        selectedImage={selectedImage}
       />
     </div>
   );

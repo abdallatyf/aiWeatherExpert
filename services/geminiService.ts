@@ -38,7 +38,7 @@ export interface WeatherAnalysis {
  * @returns A promise that resolves to an object containing the weather explanation and various data points.
  */
 export async function explainWeatherFromImage(mimeType: string, imageData: string): Promise<WeatherAnalysis> {
-    const API_KEY = process.env.API_KEY;
+    const API_KEY = "AIzaSyACjqYWF14Uc1ucaG3FTLhhNdhPS89eb0s";
 
     if (!API_KEY) {
         throw new Error("API_KEY environment variable not set. Please set it up.");
@@ -55,7 +55,7 @@ export async function explainWeatherFromImage(mimeType: string, imageData: strin
         };
 
         const textPart = {
-            text: "You are a meteorologist. Analyze the weather patterns in this satellite image. Provide a detailed explanation of cloud formations and overall conditions. Determine the primary wind direction, estimate wind speed in km/h, surface temperature in Celsius, chance of precipitation (%), humidity (%), and UV index. Identify the geographic location. Additionally, if there is a trackable storm system (like a hurricane), provide a predicted track for the next 48 hours as a 'stormTrack' array. Each point in the array should contain 'hours' (forecast hour, e.g., 12), 'intensity' (e.g., 'Category 1 Hurricane'), and its 'x' and 'y' coordinates as a percentage of the image dimensions (0-100). If there are any significant atmospheric anomalies like shear lines, dry air intrusions, or unusual convective bursts, identify them as 'anomalyStreaks'. Each streak should be a polygon represented by an array of 'points' (with 'x' and 'y' coordinates as percentages) and a brief 'description'. If a major coastal storm or hurricane is detected, also provide a 'stormSurge' forecast, including 'surgeHeight' in meters and an 'affectedArea' polygon (an array of {x, y} percentage coordinates) outlining the threatened coastline. If no significant surge is expected, this field can be omitted. If no trackable storm or anomalies are present, return empty arrays for 'stormTrack' and 'anomalyStreaks'. If the image is not a weather map, set 'explanation' to 'ERROR: Not a weather map' and other fields to default values."
+            text: "You are a meteorologist. Analyze the weather patterns in this satellite image. Provide a detailed explanation of cloud formations and overall conditions. Determine the primary wind direction, estimate wind speed in km/h, surface temperature in Celsius, chance of precipitation (%), humidity (%), and UV index. Identify the geographic location. Additionally, if there is a trackable storm system (like a hurricane), provide a predicted track for the next 48 hours as a 'stormTrack' array. Each point in the array should contain 'hours' (forecast hour, e.g., 12), 'intensity' (e.g., 'Category 1 Hurricane'), and its 'x' and 'y' coordinates as a percentage of the image dimensions (0-100). If there are any significant atmospheric anomalies like shear lines, dry air intrusions, or unusual convective bursts, identify them as 'anomalyStreaks'. Also, look for smaller-scale phenomena like potential microbursts or localized downdrafts, describing them with more granular detail. Each streak should be a polygon represented by an array of 'points' (with 'x' and 'y' coordinates as percentages) and a brief 'description'. If a major coastal storm or hurricane is detected, also provide a 'stormSurge' forecast, including 'surgeHeight' in meters and an 'affectedArea' polygon (an array of {x, y} percentage coordinates) outlining the threatened coastline. If no significant surge is expected, this field can be omitted. If no trackable storm or anomalies are present, return empty arrays for 'stormTrack' and 'anomalyStreaks'. If the image is not a weather map, set 'explanation' to 'ERROR: Not a weather map' and other fields to default values."
         };
         
         const responseSchema = {
@@ -109,7 +109,7 @@ export async function explainWeatherFromImage(mimeType: string, imageData: strin
             },
             anomalyStreaks: {
               type: Type.ARRAY,
-              description: "An array of detected atmospheric anomaly streaks. Empty if no anomalies are detected.",
+              description: "An array of detected atmospheric anomalies, including large-scale streaks (shear lines, etc.) and smaller-scale phenomena like microbursts or localized downdrafts. Empty if none are detected.",
               items: {
                 type: Type.OBJECT,
                 properties: {
@@ -180,7 +180,7 @@ export async function generateVisualSummaryImage(
   mimeType: string,
   analysis: WeatherAnalysis,
 ): Promise<string> {
-    const API_KEY = process.env.API_KEY;
+    const API_KEY = "AIzaSyACjqYWF14Uc1ucaG3FTLhhNdhPS89eb0s";
     if (!API_KEY) throw new Error("API_KEY environment variable not set.");
 
     const ai = new GoogleGenAI({ apiKey: API_KEY });
@@ -196,7 +196,7 @@ export async function generateVisualSummaryImage(
     if (analysis.stormSurge) {
         prompt += `- A storm surge of ${analysis.stormSurge.surgeHeight}m is forecast for the highlighted coastal area.\n`;
     }
-    prompt += `Make the highlighted storm track, anomaly streaks, and storm surge areas appear more photorealistic and integrated into the satellite imagery, as if they are glowing energy patterns on the map. Return only the enhanced image.`;
+    prompt += `Make the highlighted storm track, anomaly streaks, and storm surge areas appear more photorealistic and integrated into the satellite imagery, as if they are glowing energy patterns on the map. For each anomaly streak, embed its description as a clean, readable text overlay near its corresponding highlighted area. Return only the enhanced image.`;
 
     const imagePart = {
       inlineData: {
