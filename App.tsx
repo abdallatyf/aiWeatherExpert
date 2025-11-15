@@ -14,6 +14,112 @@ const base64ToFile = (base64: string, filename: string, mimeType: string): File 
   return new File([blob], filename, { type: mimeType });
 };
 
+// Helper to get rotation for wind barb based on direction string
+const getRotationForBarb = (dir: string): number => {
+    const normalizedDir = dir.toUpperCase().replace(/[^A-Z]/g, '');
+    // Barb staff points in the direction the wind is FROM.
+    const directionMap: { [key: string]: number } = {
+      'N': 0, 'NE': 45, 'E': 90, 'SE': 135,
+      'S': 180, 'SW': 225, 'W': 270, 'NW': 315,
+    };
+    for (const key in directionMap) {
+      if (normalizedDir.startsWith(key)) return directionMap[key];
+    }
+    return 0;
+};
+
+// Helper to draw a single wind barb on a canvas context
+const drawWindBarbOnCanvas = (ctx: CanvasRenderingContext2D, x: number, y: number, speed: number, direction: string) => {
+    const rotation = getRotationForBarb(direction);
+    const speedInKnots = Math.round(speed / 1.852);
+
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.rotate(rotation * Math.PI / 180); // Convert degrees to radians
+    ctx.strokeStyle = 'white';
+    ctx.fillStyle = 'white';
+    ctx.lineWidth = 1.5;
+
+    // Calm wind (circle)
+    if (speedInKnots < 3) {
+        ctx.beginPath();
+        ctx.arc(0, 0, 4, 0, 2 * Math.PI);
+        ctx.stroke();
+        ctx.restore();
+        return;
+    }
+    
+    const staffLength = 25;
+    const barbLength = 10;
+    const halfBarbLength = 5;
+    const barbSpacing = 4;
+    const pennantHeight = barbSpacing;
+
+    // Staff
+    ctx.beginPath();
+    ctx.moveTo(0, 0);
+    ctx.lineTo(0, -staffLength);
+    ctx.stroke();
+
+    let remainingKnots = speedInKnots;
+    let currentY = -staffLength;
+
+    const numPennants = Math.floor(remainingKnots / 50);
+    remainingKnots %= 50;
+    const numFullBarbs = Math.floor(remainingKnots / 10);
+    remainingKnots %= 10;
+    const numHalfBarbs = remainingKnots >= 5 ? 1 : 0;
+    
+    // Draw from the tip of the staff inwards
+    for (let i = 0; i < numPennants; i++) {
+        ctx.beginPath();
+        ctx.moveTo(0, currentY);
+        ctx.lineTo(-barbLength, currentY + pennantHeight / 2);
+        ctx.lineTo(0, currentY + pennantHeight);
+        ctx.closePath();
+        ctx.fill();
+        currentY += pennantHeight + 2;
+    }
+
+    if (numPennants > 0 && (numFullBarbs > 0 || numHalfBarbs > 0)) {
+        currentY += barbSpacing / 2;
+    }
+
+    for (let i = 0; i < numFullBarbs; i++) {
+        ctx.beginPath();
+        ctx.moveTo(0, currentY);
+        ctx.lineTo(-barbLength, currentY - barbSpacing);
+        ctx.stroke();
+        currentY += barbSpacing;
+    }
+
+    if (numHalfBarbs > 0) {
+        ctx.beginPath();
+        ctx.moveTo(0, currentY);
+        ctx.lineTo(-halfBarbLength, currentY - barbSpacing / 2);
+        ctx.stroke();
+    }
+    
+    ctx.restore();
+};
+
+// Helper to scale an SVG path string from percentage-based to pixel-based coordinates
+const scaleSvgPathForCanvas = (path: string, width: number, height: number): string => {
+    const commands = path.split(/(?=[MmLlHhVvCcSsQqTtAaZz])/);
+    return commands.map(command => {
+        if (!command) return '';
+        const op = command.charAt(0);
+        const args = command.substring(1).trim().split(/[\s,]+/).map(parseFloat);
+        const scaledArgs = args.map((arg, i) => {
+        if (isNaN(arg)) return '';
+        // Scale X coordinates (even indices) by width, Y (odd indices) by height
+        return (i % 2 === 0) ? (arg / 100 * width).toFixed(2) : (arg / 100 * height).toFixed(2);
+        });
+        return op + scaledArgs.join(' ');
+    }).join('');
+};
+
+
 const ThemeToggle = ({ theme, toggleTheme }: { theme: 'light' | 'dark', toggleTheme: () => void }) => (
   <button
     onClick={toggleTheme}
@@ -720,22 +826,6 @@ const StormSurgeDisplay = ({ surge, dimensions }: { surge: StormSurgeForecast, d
 
 const WindBarbOverlay = ({ direction, speed, dimensions }: { direction: string; speed: number; dimensions: { width: number, height: number } }) => {
   if (!direction || speed < 0 || dimensions.width === 0) return null;
-
-  const getRotationForBarb = (dir: string): number => {
-    const normalizedDir = dir.toUpperCase().replace(/[^A-Z]/g, '');
-    // Barb staff points in the direction the wind is FROM.
-    const directionMap: { [key: string]: number } = {
-      'N': 0, 'NE': 45, 'E': 90, 'SE': 135,
-      'S': 180, 'SW': 225, 'W': 270, 'NW': 315,
-    };
-    for (const key in directionMap) {
-      if (normalizedDir.startsWith(key)) return directionMap[key];
-    }
-    return 0;
-  };
-
-  const rotation = getRotationForBarb(direction);
-  // 1 knot = 1.852 km/h
   const speedInKnots = Math.round(speed / 1.852);
 
   const Barb = ({ knots, x, y, rotation }: { knots: number, x: number, y: number, rotation: number }) => {
@@ -820,7 +910,7 @@ const WindBarbOverlay = ({ direction, speed, dimensions }: { direction: string; 
       <svg className="absolute top-0 left-0 w-full h-full pointer-events-none" viewBox={`0 0 ${dimensions.width} ${dimensions.height}`}>
         <g className="wind-barb-group">
             {barbs.map((barb, index) => (
-                <Barb key={index} x={barb.x} y={barb.y} knots={speedInKnots} rotation={rotation} />
+                <Barb key={index} x={barb.x} y={barb.y} knots={speedInKnots} rotation={getRotationForBarb(direction)} />
             ))}
         </g>
       </svg>
@@ -1250,10 +1340,16 @@ export default function App() {
     }
   };
 
-  const generateComposedImageBase64 = useCallback(async (): Promise<string> => {
+  const generateComposedImageBase64 = useCallback(async (options: {
+      showHeatmap: boolean,
+      showWind: boolean,
+      showIsobars: boolean,
+  }): Promise<string> => {
     if (!selectedImage || !analysis || !imageContainerRef.current) {
         throw new Error("Missing required data for image composition.");
     }
+
+    const { showHeatmap, showWind, showIsobars } = options;
     const { width, height } = imageDimensions;
     const originalImg = new Image();
 
@@ -1268,8 +1364,18 @@ export default function App() {
                 return;
             }
 
+            // 1. Draw original image
             ctx.drawImage(originalImg, 0, 0, width, height);
 
+            // 2. Draw heatmap
+            if (showHeatmap && analysis.temperature) {
+                ctx.globalAlpha = 0.4;
+                ctx.fillStyle = getTemperatureColor(analysis.temperature);
+                ctx.fillRect(0, 0, width, height);
+                ctx.globalAlpha = 1.0;
+            }
+
+            // 3. Draw storm track, anomalies, surge
             if (includeStormTrack && analysis.stormTrack && analysis.stormTrack.length > 0) {
                 ctx.beginPath();
                 const firstPoint = analysis.stormTrack[0];
@@ -1361,6 +1467,40 @@ export default function App() {
                 ctx.fillText(`${analysis.stormSurge!.surgeHeight}m Surge`, centroid.x, centroid.y);
             }
 
+            // 4. Draw Isobars
+            if (showIsobars && analysis.isobars && analysis.isobars.length > 0) {
+                analysis.isobars.forEach(isobar => {
+                    const scaledPath = scaleSvgPathForCanvas(isobar.path, width, height);
+                    ctx.strokeStyle = "rgba(230, 230, 230, 0.9)";
+                    ctx.lineWidth = 1.5;
+                    ctx.stroke(new Path2D(scaledPath));
+                    
+                    const labelX = (isobar.labelPosition.x / 100) * width;
+                    const labelY = (isobar.labelPosition.y / 100) * height;
+                    ctx.font = 'bold 10px sans-serif';
+                    ctx.textAlign = 'center';
+                    ctx.textBaseline = 'middle';
+                    ctx.strokeStyle = 'rgba(0,0,0,0.8)';
+                    ctx.lineWidth = 2;
+                    ctx.strokeText(isobar.pressure.toString(), labelX, labelY);
+                    ctx.fillStyle = 'white';
+                    ctx.fillText(isobar.pressure.toString(), labelX, labelY);
+                });
+            }
+
+            // 5. Draw Wind Barbs
+            if (showWind && analysis.windDirection && typeof analysis.windSpeed !== 'undefined') {
+                const gridRows = 4;
+                const gridCols = 6;
+                for (let i = 0; i < gridRows; i++) {
+                    for (let j = 0; j < gridCols; j++) {
+                        const x = (j + 0.5) * width / gridCols;
+                        const y = (i + 0.5) * height / gridRows;
+                        drawWindBarbOnCanvas(ctx, x, y, analysis.windSpeed, analysis.windDirection);
+                    }
+                }
+            }
+
             const pngDataUrl = canvas.toDataURL('image/png');
             resolve(pngDataUrl.split(',')[1]);
         };
@@ -1377,7 +1517,11 @@ export default function App() {
       setIsGeneratingOverlay(true);
       setError(null);
       try {
-          const composedBase64 = await generateComposedImageBase64();
+          const composedBase64 = await generateComposedImageBase64({
+            showHeatmap,
+            showWind,
+            showIsobars,
+          });
           setComposedOverlayImage({ base64: composedBase64, mimeType: 'image/png' });
           setViewMode('overlay');
       } catch (err: any) {
@@ -1385,14 +1529,18 @@ export default function App() {
       } finally {
           setIsGeneratingOverlay(false);
       }
-  }, [generateComposedImageBase64]);
+  }, [generateComposedImageBase64, showHeatmap, showWind, showIsobars]);
 
   const handleGenerateAISummary = useCallback(async () => {
     if (!analysis) return;
     setIsGeneratingVisual(true);
     setError(null);
     try {
-        const composedBase64 = await generateComposedImageBase64();
+        const composedBase64 = await generateComposedImageBase64({
+            showHeatmap,
+            showWind,
+            showIsobars,
+        });
         const generatedImageBase64 = await generateVisualSummaryImage(composedBase64, 'image/png', analysis);
         setVisualSummary({ base64: generatedImageBase64, mimeType: 'image/png' });
         setViewMode('ai');
@@ -1401,7 +1549,7 @@ export default function App() {
     } finally {
         setIsGeneratingVisual(false);
     }
-  }, [analysis, generateComposedImageBase64]);
+  }, [analysis, generateComposedImageBase64, showHeatmap, showWind, showIsobars]);
 
   const triggerFileSelect = () => fileInputRef.current?.click();
   const hasStormTrack = analysis?.stormTrack && analysis.stormTrack.length > 0;
@@ -1499,9 +1647,9 @@ export default function App() {
                         onLoad={() => setIsHiResImageLoaded(true)}
                     />
                    )}
-                  {viewMode === 'original' && hasStormTrack && <StormTrackDisplay track={analysis.stormTrack!} dimensions={imageDimensions} forecastHour={forecastHour} />}
-                  {viewMode === 'original' && hasAnomalies && <AnomalyStreaksDisplay streaks={analysis.anomalyStreaks!} dimensions={imageDimensions} setTooltip={setTooltip} />}
-                  {viewMode === 'original' && hasStormSurge && <StormSurgeDisplay surge={analysis.stormSurge!} dimensions={imageDimensions} />}
+                  {viewMode === 'original' && hasStormTrack && includeStormTrack && <StormTrackDisplay track={analysis.stormTrack!} dimensions={imageDimensions} forecastHour={forecastHour} />}
+                  {viewMode === 'original' && hasAnomalies && includeAnomalies && <AnomalyStreaksDisplay streaks={analysis.anomalyStreaks!} dimensions={imageDimensions} setTooltip={setTooltip} />}
+                  {viewMode === 'original' && hasStormSurge && includeStormSurge && <StormSurgeDisplay surge={analysis.stormSurge!} dimensions={imageDimensions} />}
                   {viewMode === 'original' && showHeatmap && analysis && (
                     <TemperatureHeatmapDisplay temperature={analysis.temperature} />
                   )}
@@ -1543,7 +1691,7 @@ export default function App() {
 
                 {analysis && hasOverlays && (
                   <div className="mt-4 p-3 bg-gray-200/50 dark:bg-gray-900/50 rounded-lg">
-                    <p className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Include in Generated Images:</p>
+                    <p className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Analysis Layers:</p>
                     <div className="flex flex-wrap gap-x-6 gap-y-2">
                       {hasStormTrack && (
                         <label className="flex items-center space-x-2 text-sm text-gray-800 dark:text-gray-200 cursor-pointer">
@@ -1615,7 +1763,7 @@ export default function App() {
                          <button
                           onClick={() => setShowIsobars(!showIsobars)}
                           disabled={!hasIsobars}
-                          className={`w-full col-span-2 inline-flex items-center justify-center px-4 py-2 border text-sm font-medium rounded-md shadow-sm transition-colors disabled:bg-gray-200 dark:disabled:bg-gray-700 disabled:text-gray-400 disabled:cursor-not-allowed ${showIsobars ? 'bg-gray-800 hover:bg-gray-900 dark:bg-gray-200 dark:hover:bg-gray-300 border-transparent text-white dark:text-gray-800 ring-2 ring-gray-500 ring-offset-2 ring-offset-white dark:ring-offset-gray-800' : 'bg-gray-200 hover:bg-gray-300 dark:bg-gray-700 dark:hover:bg-gray-600 border-gray-300 dark:border-gray-600 text-gray-800 dark:text-gray-300'}`}
+                          className={`w-full col-span-2 inline-flex items-center justify-center px-4 py-2 border text-sm font-medium rounded-md shadow-sm transition-colors disabled:bg-gray-200 dark:disabled:bg-gray-700 disabled:text-gray-400 disabled:cursor-not-allowed ${showIsobars ? 'bg-indigo-500 hover:bg-indigo-600 dark:bg-indigo-600 dark:hover:bg-indigo-700 border-transparent text-white ring-2 ring-indigo-400 ring-offset-2 ring-offset-white dark:ring-offset-gray-800' : 'bg-gray-200 hover:bg-gray-300 dark:bg-gray-700 dark:hover:bg-gray-600 border-gray-300 dark:border-gray-600 text-gray-800 dark:text-gray-300'}`}
                         >
                           {showIsobars ? 'Hide' : 'Show'} Isobars
                         </button>
