@@ -33,6 +33,17 @@ export interface WeatherAnalysis {
   stormSurge?: StormSurgeForecast;
 }
 
+export interface LiveWeatherData {
+  temperature: number;
+  feelsLike: number;
+  condition: string;
+  conditionIcon: 'sun' | 'cloud' | 'rain' | 'storm';
+  windSpeed: number;
+  windDirection: string;
+  lastUpdated: string;
+}
+
+
 /**
  * Generates a weather explanation from a satellite image.
  * @param mimeType The MIME type of the image (e.g., 'image/jpeg').
@@ -229,4 +240,46 @@ export async function generateVisualSummaryImage(
         console.error("Error generating visual summary:", error);
         throw new Error("Failed to generate visual summary image.");
     }
+}
+
+// Simulates fetching live weather data from an external API
+export async function fetchLiveWeatherData(lat: number, lon: number): Promise<LiveWeatherData> {
+  return new Promise((resolve, reject) => {
+    setTimeout(() => {
+      // Simulate potential API failure
+      if (Math.random() < 0.1) {
+        return reject(new Error("Live weather API is currently unavailable."));
+      }
+
+      // Generate plausible mock data based on coordinates
+      const baseTemp = 15 + (lat % 20); // Temp varies with latitude
+      const conditionRand = Math.random();
+      let condition: LiveWeatherData['condition'];
+      let conditionIcon: LiveWeatherData['conditionIcon'];
+
+      if (conditionRand < 0.6) {
+        condition = 'Partly Cloudy';
+        conditionIcon = 'cloud';
+      } else if (conditionRand < 0.8) {
+        condition = 'Clear Sky';
+        conditionIcon = 'sun';
+      } else if (conditionRand < 0.95) {
+        condition = 'Light Rain';
+        conditionIcon = 'rain';
+      } else {
+        condition = 'Thunderstorm';
+        conditionIcon = 'storm';
+      }
+
+      resolve({
+        temperature: Math.round(baseTemp + (Math.random() * 5) - 2.5),
+        feelsLike: Math.round(baseTemp + (Math.random() * 6) - 4),
+        condition,
+        conditionIcon,
+        windSpeed: Math.round(5 + Math.random() * 20),
+        windDirection: ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'][Math.floor(Math.random() * 8)],
+        lastUpdated: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      });
+    }, 1500); // Simulate network latency
+  });
 }

@@ -1,6 +1,6 @@
 import React, { useState, useCallback, useRef, useEffect } from 'react';
 import { ImageFile } from './types';
-import { explainWeatherFromImage, WeatherAnalysis, StormTrackPoint, AnomalyStreak, generateVisualSummaryImage, StormSurgeForecast } from './services/geminiService';
+import { explainWeatherFromImage, WeatherAnalysis, StormTrackPoint, AnomalyStreak, generateVisualSummaryImage, StormSurgeForecast, fetchLiveWeatherData, LiveWeatherData } from './services/geminiService';
 import { HISTORICAL_IMAGE_URL } from './historicalImage';
 
 const base64ToFile = (base64: string, filename: string, mimeType: string): File => {
@@ -802,6 +802,82 @@ const Tooltip = ({ visible, content, x, y }: { visible: boolean; content: string
   );
 };
 
+const LiveWeatherDisplay = ({ 
+  data, 
+  isLoading, 
+  error 
+}: { 
+  data: LiveWeatherData | null, 
+  isLoading: boolean, 
+  error: string | null 
+}) => {
+  const WeatherIcon = ({ icon }: { icon: LiveWeatherData['conditionIcon'] }) => {
+    switch(icon) {
+      case 'sun':
+        return <svg xmlns="http://www.w3.org/2000/svg" className="h-10 w-10 text-yellow-400" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M10 2a1 1 0 011 1v1a1 1 0 11-2 0V3a1 1 0 011-1zm4 8a4 4 0 11-8 0 4 4 0 018 0zm-.464 4.95l.707.707a1 1 0 001.414-1.414l-.707-.707a1 1 0 00-1.414 1.414zm2.12-10.607a1 1 0 010 1.414l-.707.707a1 1 0 11-1.414-1.414l.707-.707a1 1 0 011.414 0zM17 11a1 1 0 100-2h-1a1 1 0 100 2h1zm-7 4a1 1 0 011 1v1a1 1 0 11-2 0v-1a1 1 0 011-1zM5.05 14.464A1 1 0 106.465 13.05l-.707-.707a1 1 0 00-1.414 1.414l.707.707zm-1.414-2.12a1 1 0 011.414 0l.707.707a1 1 0 11-1.414 1.414l-.707-.707a1 1 0 010-1.414zM4 11a1 1 0 100-2H3a1 1 0 100 2h1z" clipRule="evenodd" /></svg>;
+      case 'cloud':
+        return <svg xmlns="http://www.w3.org/2000/svg" className="h-10 w-10 text-gray-400" viewBox="0 0 20 20" fill="currentColor"><path d="M5.5 16a3.5 3.5 0 01-.369-6.98 4 4 0 117.753-1.977A4.5 4.5 0 1113.5 16h-8z" /></svg>;
+      case 'rain':
+        return <svg xmlns="http://www.w3.org/2000/svg" className="h-10 w-10 text-blue-400" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M15.707 15.707a1 1 0 01-1.414 0l-5-5a1 1 0 010-1.414l5-5a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 010 1.414zm-6 0a1 1 0 01-1.414 0l-5-5a1 1 0 010-1.414l5-5a1 1 0 011.414 1.414L5.414 10l4.293 4.293a1 1 0 010 1.414z" clipRule="evenodd" /></svg>;
+      case 'storm':
+        return <svg xmlns="http://www.w3.org/2000/svg" className="h-10 w-10 text-gray-500" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M11.3 1.046A1 1 0 0112 2v5.293l6.293-6.293a1 1 0 111.414 1.414L13.414 8.5H19a1 1 0 110 2h-5.586l6.293 6.293a1 1 0 11-1.414 1.414L12 11.414V17a1 1 0 11-2 0v-5.586L3.707 17.707a1 1 0 11-1.414-1.414L8.586 10H3a1 1 0 110-2h5.586L2.293 1.707A1 1 0 113.707.293L10 6.586V2a1 1 0 011.3-.954z" clipRule="evenodd" /></svg>;
+      default:
+        return null;
+    }
+  };
+  
+  const renderContent = () => {
+    if (isLoading) {
+      return (
+        <div className="flex items-center justify-center h-full">
+          <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-cyan-500 dark:border-cyan-400"></div>
+          <p className="ml-3 text-sm text-gray-600 dark:text-gray-400">Fetching live weather...</p>
+        </div>
+      );
+    }
+
+    if (error) {
+      return (
+         <div className="text-sm text-red-600 dark:text-red-400 bg-red-100 dark:bg-red-900/30 p-2 rounded-md flex items-center gap-2">
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.21 3.03-1.742 3.03H4.42c-1.532 0-2.492-1.696-1.742-3.03l5.58-9.92zM10 13a1 1 0 110-2 1 1 0 010 2zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" /></svg>
+            {error}
+         </div>
+      );
+    }
+    
+    if (data) {
+      return (
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 items-center">
+            <div className="flex items-center gap-2 col-span-2 sm:col-span-1">
+              <WeatherIcon icon={data.conditionIcon} />
+              <p className="font-semibold text-gray-800 dark:text-gray-200">{data.condition}</p>
+            </div>
+            <div className="text-center">
+              <p className="text-2xl font-bold text-gray-800 dark:text-gray-100">{data.temperature}°C</p>
+              <p className="text-xs text-gray-500 dark:text-gray-400">Feels like {data.feelsLike}°</p>
+            </div>
+            <div className="text-center">
+              <p className="text-xl font-semibold text-gray-800 dark:text-gray-200">{data.windSpeed} <span className="text-sm">km/h</span></p>
+              <p className="text-xs text-gray-500 dark:text-gray-400">Wind ({data.windDirection})</p>
+            </div>
+            <p className="col-span-2 sm:col-span-1 text-xs text-gray-500 dark:text-gray-400 text-right">Updated: {data.lastUpdated}</p>
+        </div>
+      );
+    }
+    return null;
+  }
+  
+  return (
+    <div className="mb-4 bg-gray-100 dark:bg-gray-700 p-3 rounded-lg border border-gray-200 dark:border-gray-600">
+       <div className="flex items-center mb-2">
+         <span className="bg-red-500 text-white text-xs font-bold mr-2 px-2 py-0.5 rounded-full">LIVE</span>
+         <h3 className="font-semibold text-gray-700 dark:text-gray-300">Current Conditions</h3>
+       </div>
+      {renderContent()}
+    </div>
+  );
+};
+
 
 export default function App() {
   const [theme, setTheme] = useState<'light' | 'dark'>(() => {
@@ -819,6 +895,7 @@ export default function App() {
   const [selectedImage, setSelectedImage] = useState<ImageFile | null>(null);
   const [analysis, setAnalysis] = useState<WeatherAnalysis | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(false);
+  const [isUploading, setIsUploading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
   const [isHiResImageLoaded, setIsHiResImageLoaded] = useState<boolean>(false);
   const [isShareModalOpen, setIsShareModalOpen] = useState(false);
@@ -837,6 +914,11 @@ export default function App() {
   const [includeStormTrack, setIncludeStormTrack] = useState<boolean>(true);
   const [includeAnomalies, setIncludeAnomalies] = useState<boolean>(true);
   const [includeStormSurge, setIncludeStormSurge] = useState<boolean>(true);
+
+  const [liveWeatherData, setLiveWeatherData] = useState<LiveWeatherData | null>(null);
+  const [isFetchingLiveWeather, setIsFetchingLiveWeather] = useState<boolean>(false);
+  const [liveWeatherError, setLiveWeatherError] = useState<string | null>(null);
+
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const imageContainerRef = useRef<HTMLDivElement>(null);
@@ -920,6 +1002,9 @@ export default function App() {
     setIncludeStormTrack(true);
     setIncludeAnomalies(true);
     setIncludeStormSurge(true);
+    setLiveWeatherData(null);
+    setLiveWeatherError(null);
+    setIsFetchingLiveWeather(false);
   }, []);
 
   const handlePaste = useCallback((event: ClipboardEvent) => {
@@ -931,12 +1016,18 @@ export default function App() {
         event.preventDefault();
         const imageFile = imageItem.getAsFile();
         if (imageFile) {
+            setIsUploading(true);
             setIsHiResImageLoaded(false);
             const reader = new FileReader();
             reader.onloadend = () => {
                 const base64String = (reader.result as string).split(',')[1];
                 setSelectedImage({ file: imageFile, base64: base64String, mimeType: imageFile.type });
                 resetAnalysis();
+                setIsUploading(false);
+            };
+            reader.onerror = () => {
+              setError("Failed to read the pasted image.");
+              setIsUploading(false);
             };
             reader.readAsDataURL(imageFile);
         }
@@ -948,15 +1039,46 @@ export default function App() {
     return () => { document.removeEventListener('paste', handlePaste); };
   }, [handlePaste]);
 
+  useEffect(() => {
+    if (analysis && analysis.centerCoordinates) {
+      const { lat, lon } = analysis.centerCoordinates;
+      const fetchLiveWeather = async () => {
+        setIsFetchingLiveWeather(true);
+        setLiveWeatherError(null);
+        setLiveWeatherData(null);
+        try {
+          const data = await fetchLiveWeatherData(lat, lon);
+          setLiveWeatherData(data);
+        } catch (err: any) {
+          setLiveWeatherError(err.message || "Failed to fetch live weather.");
+        } finally {
+          setIsFetchingLiveWeather(false);
+        }
+      };
+      fetchLiveWeather();
+    } else {
+      setLiveWeatherData(null);
+      setLiveWeatherError(null);
+      setIsFetchingLiveWeather(false);
+    }
+  }, [analysis]);
+
+
   const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (file) {
+      setIsUploading(true);
       setIsHiResImageLoaded(false);
       const reader = new FileReader();
       reader.onloadend = () => {
         const base64String = (reader.result as string).split(',')[1];
         setSelectedImage({ file: file, base64: base64String, mimeType: file.type });
         resetAnalysis();
+        setIsUploading(false);
+      };
+      reader.onerror = () => {
+        setError("Failed to read the image file.");
+        setIsUploading(false);
       };
       reader.readAsDataURL(file);
     }
@@ -988,6 +1110,7 @@ export default function App() {
   }, [selectedImage, resetAnalysis]);
 
   const handleUseSample = async () => {
+    setIsUploading(true);
     setIsHiResImageLoaded(false);
     resetAnalysis();
     try {
@@ -1005,14 +1128,17 @@ export default function App() {
           base64: base64String,
           mimeType: blob.type,
         });
+        setIsUploading(false);
       };
       reader.onerror = () => {
         setError("Failed to read sample image file.");
+        setIsUploading(false);
       };
       reader.readAsDataURL(blob);
     } catch (e) {
       console.error("Failed to fetch sample image:", e);
       setError("Could not load the sample image. Please check your network connection.");
+      setIsUploading(false);
     }
   };
 
@@ -1244,6 +1370,14 @@ export default function App() {
             {selectedImage ? (
               <div className="text-center w-full">
                 <div ref={imageContainerRef} className="relative w-full aspect-video bg-gray-200 dark:bg-gray-800/50 rounded-lg overflow-hidden mb-4 flex items-center justify-center">
+                   {(isLoading || isUploading) && (
+                        <div className="absolute inset-0 bg-gray-800 bg-opacity-70 flex flex-col items-center justify-center z-10 rounded-lg backdrop-blur-sm">
+                            <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-cyan-400"></div>
+                            <p className="mt-4 text-white font-semibold text-lg">
+                                {isLoading ? 'Analyzing Weather...' : 'Loading Image...'}
+                            </p>
+                        </div>
+                    )}
                    {displayImage && (
                     <img
                         key={displayImage.src}
@@ -1393,10 +1527,15 @@ export default function App() {
           </div>
 
           <div className="flex flex-col">
-            <button onClick={handleAnalyzeClick} disabled={!selectedImage || isLoading} className="w-full mb-4 inline-flex items-center justify-center px-6 py-3 border border-transparent text-base font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-gray-100 dark:focus:ring-offset-gray-800 focus:ring-indigo-500 disabled:bg-gray-500 disabled:cursor-not-allowed">
+            <button onClick={handleAnalyzeClick} disabled={!selectedImage || isLoading || isUploading} className="w-full mb-4 inline-flex items-center justify-center px-6 py-3 border border-transparent text-base font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-gray-100 dark:focus:ring-offset-gray-800 focus:ring-indigo-500 disabled:bg-gray-500 disabled:cursor-not-allowed">
               {isLoading ? 'Analyzing...' : 'Analyze Weather'}
             </button>
             <div className="bg-gray-50 dark:bg-gray-700/50 rounded-lg p-6 flex-grow min-h-[200px] flex flex-col">
+              
+               {(analysis || isFetchingLiveWeather) && (
+                  <LiveWeatherDisplay data={liveWeatherData} isLoading={isFetchingLiveWeather} error={liveWeatherError} />
+                )}
+
               <div className="flex items-start justify-between mb-4 gap-4 flex-wrap">
                  <div className="flex items-center gap-3">
                    <h2 className="text-xl font-semibold text-gray-800 dark:text-gray-200">Meteorological Analysis</h2>
