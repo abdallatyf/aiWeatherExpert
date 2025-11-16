@@ -1,6 +1,6 @@
 import React, { useState, useCallback, useRef, useEffect } from 'react';
 import { ImageFile } from './types';
-import { explainWeatherFromImage, WeatherAnalysis, StormTrackPoint, AnomalyStreak, generateVisualSummaryImage, StormSurgeForecast, fetchLiveWeatherData, LiveWeatherData, Isobar } from './services/geminiService';
+import { explainWeatherFromImage, WeatherAnalysis, StormTrackPoint, AnomalyStreak, generateVisualSummaryImage, StormSurgeForecast, fetchLiveWeatherData, LiveWeatherData, Isobar, WindFieldPoint } from './services/geminiService';
 import { HISTORICAL_IMAGE_URL } from './historicalImage';
 
 const base64ToFile = (base64: string, filename: string, mimeType: string): File => {
@@ -14,92 +14,37 @@ const base64ToFile = (base64: string, filename: string, mimeType: string): File 
   return new File([blob], filename, { type: mimeType });
 };
 
-// Helper to get rotation for wind barb based on direction string
-const getRotationForBarb = (dir: string): number => {
-    const normalizedDir = dir.toUpperCase().replace(/[^A-Z]/g, '');
-    // Barb staff points in the direction the wind is FROM.
-    const directionMap: { [key: string]: number } = {
-      'N': 0, 'NE': 45, 'E': 90, 'SE': 135,
-      'S': 180, 'SW': 225, 'W': 270, 'NW': 315,
-    };
-    for (const key in directionMap) {
-      if (normalizedDir.startsWith(key)) return directionMap[key];
-    }
-    return 0;
+// Helper to get a color based on wind speed (km/h)
+const getWindColor = (speed: number): string => {
+    if (speed < 10) return '#60a5fa'; // blue-400
+    if (speed < 30) return '#22d3ee'; // cyan-400
+    if (speed < 50) return '#34d399'; // emerald-400
+    if (speed < 70) return '#facc15'; // yellow-400
+    if (speed < 90) return '#f97316'; // orange-500
+    return '#ef4444'; // red-500
 };
 
-// Helper to draw a single wind barb on a canvas context
-const drawWindBarbOnCanvas = (ctx: CanvasRenderingContext2D, x: number, y: number, speed: number, direction: string) => {
-    const rotation = getRotationForBarb(direction);
-    const speedInKnots = Math.round(speed / 1.852);
-
+// Helper to draw a single wind arrow on a canvas context
+const drawWindArrowOnCanvas = (ctx: CanvasRenderingContext2D, x: number, y: number, speed: number, direction: number) => {
     ctx.save();
     ctx.translate(x, y);
-    ctx.rotate(rotation * Math.PI / 180); // Convert degrees to radians
-    ctx.strokeStyle = 'white';
-    ctx.fillStyle = 'white';
-    ctx.lineWidth = 1.5;
+    ctx.rotate(direction * Math.PI / 180); // Convert degrees to radians
+    ctx.fillStyle = getWindColor(speed);
+    ctx.strokeStyle = 'rgba(0,0,0,0.5)';
+    ctx.lineWidth = 1;
 
-    // Calm wind (circle)
-    if (speedInKnots < 3) {
-        ctx.beginPath();
-        ctx.arc(0, 0, 4, 0, 2 * Math.PI);
-        ctx.stroke();
-        ctx.restore();
-        return;
-    }
-    
-    const staffLength = 25;
-    const barbLength = 10;
-    const halfBarbLength = 5;
-    const barbSpacing = 4;
-    const pennantHeight = barbSpacing;
-
-    // Staff
+    // Simple arrow path
+    const arrowLength = 12;
+    const arrowWidth = 6;
     ctx.beginPath();
-    ctx.moveTo(0, 0);
-    ctx.lineTo(0, -staffLength);
+    ctx.moveTo(0, -arrowLength / 2);
+    ctx.lineTo(arrowWidth / 2, arrowLength / 2);
+    ctx.lineTo(-arrowWidth / 2, arrowLength / 2);
+    ctx.closePath();
+    
+    ctx.fill();
     ctx.stroke();
 
-    let remainingKnots = speedInKnots;
-    let currentY = -staffLength;
-
-    const numPennants = Math.floor(remainingKnots / 50);
-    remainingKnots %= 50;
-    const numFullBarbs = Math.floor(remainingKnots / 10);
-    remainingKnots %= 10;
-    const numHalfBarbs = remainingKnots >= 5 ? 1 : 0;
-    
-    // Draw from the tip of the staff inwards
-    for (let i = 0; i < numPennants; i++) {
-        ctx.beginPath();
-        ctx.moveTo(0, currentY);
-        ctx.lineTo(-barbLength, currentY + pennantHeight / 2);
-        ctx.lineTo(0, currentY + pennantHeight);
-        ctx.closePath();
-        ctx.fill();
-        currentY += pennantHeight + 2;
-    }
-
-    if (numPennants > 0 && (numFullBarbs > 0 || numHalfBarbs > 0)) {
-        currentY += barbSpacing / 2;
-    }
-
-    for (let i = 0; i < numFullBarbs; i++) {
-        ctx.beginPath();
-        ctx.moveTo(0, currentY);
-        ctx.lineTo(-barbLength, currentY - barbSpacing);
-        ctx.stroke();
-        currentY += barbSpacing;
-    }
-
-    if (numHalfBarbs > 0) {
-        ctx.beginPath();
-        ctx.moveTo(0, currentY);
-        ctx.lineTo(-halfBarbLength, currentY - barbSpacing / 2);
-        ctx.stroke();
-    }
-    
     ctx.restore();
 };
 
@@ -223,7 +168,9 @@ const ShareModal = ({
   composedOverlayImage,
   unifiedAnalysisImage,
   selectedImage,
-  theme
+  theme,
+  genericDownloadHandler,
+  genericShareHandler
 }: { 
   isOpen: boolean, 
   onClose: () => void, 
@@ -232,7 +179,9 @@ const ShareModal = ({
   composedOverlayImage: { base64: string, mimeType: string } | null,
   unifiedAnalysisImage: { base64: string, mimeType: string } | null,
   selectedImage: ImageFile | null,
-  theme: 'light' | 'dark'
+  theme: 'light' | 'dark',
+  genericDownloadHandler: (image: { base64: string; mimeType: string; } | null, prefix: string) => void,
+  genericShareHandler: (image: { base64: string; mimeType: string; } | null, prefix: string, titleText: string, bodyText: string) => Promise<void>
 }) => {
   const [copyButtonText, setCopyButtonText] = useState('Copy');
   const [shareMode, setShareMode] = useState<'analysis' | 'original' | 'overlay' | 'visual' | 'unified'>('analysis');
@@ -269,35 +218,6 @@ const ShareModal = ({
       console.error('Failed to copy link: ', err);
     });
   };
-  
-  const genericDownloadHandler = (image: {base64: string, mimeType: string} | null, prefix: string) => {
-    if (!image) return;
-    const link = document.createElement('a');
-    link.href = `data:${image.mimeType};base64,${image.base64}`;
-    const newFilename = `${prefix}_${selectedImage?.file.name.split('.')[0] || 'weather'}.png`;
-    link.download = newFilename;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-  };
-
-  const genericShareHandler = async (image: {base64: string, mimeType: string} | null, prefix: string, titleText: string, bodyText: string) => {
-    if (!image || !selectedImage || !navigator.share) return;
-    
-    const newFilename = `${prefix}_${selectedImage.file.name.split('.')[0]}.png`;
-    const fileToShare = base64ToFile(image.base64, newFilename, image.mimeType);
-
-    try {
-      await navigator.share({
-        files: [fileToShare],
-        title: titleText,
-        text: bodyText,
-      });
-    } catch (error) {
-      console.error(`Error sharing the ${prefix} image:`, error);
-    }
-  };
-
 
   const getTabClass = (mode: typeof shareMode) => {
     return shareMode === mode
@@ -730,7 +650,7 @@ const StormTrackDisplay = ({ track, dimensions, forecastHour }: { track: StormTr
 const AnomalyStreaksDisplay = ({ streaks, dimensions, setTooltip }: {
   streaks: AnomalyStreak[],
   dimensions: { width: number, height: number },
-  setTooltip: React.Dispatch<React.SetStateAction<{ visible: boolean; content: string; x: number; y: number }>>
+  setTooltip: React.Dispatch<React.SetStateAction<{ visible: boolean; content: React.ReactNode; x: number; y: number }>>
 }) => {
   if (!streaks || streaks.length === 0 || dimensions.width === 0) return null;
 
@@ -759,7 +679,20 @@ const AnomalyStreaksDisplay = ({ streaks, dimensions, setTooltip }: {
               fill="rgba(250, 204, 21, 0.25)"
               stroke="#facc15"
               strokeWidth="2"
-              onMouseEnter={(e) => setTooltip({ visible: true, content: streak.description, x: e.clientX, y: e.clientY })}
+              onMouseEnter={(e) => setTooltip({
+                visible: true,
+                content: (
+                  <div>
+                    <p className="font-semibold text-gray-900 dark:text-gray-100">{streak.description}</p>
+                    <div className="mt-2 pt-2 border-t border-gray-200 dark:border-gray-600">
+                        <strong className="text-yellow-600 dark:text-yellow-400">Potential Impact:</strong>
+                        <p className="mt-1 text-sm text-gray-700 dark:text-gray-300">{streak.impact}</p>
+                    </div>
+                  </div>
+                ),
+                x: e.clientX,
+                y: e.clientY
+              })}
               onMouseMove={(e) => setTooltip(prev => ({ ...prev, x: e.clientX, y: e.clientY }))}
               onMouseLeave={() => setTooltip({ visible: false, content: '', x: 0, y: 0 })}
             >
@@ -822,95 +755,40 @@ const StormSurgeDisplay = ({ surge, dimensions }: { surge: StormSurgeForecast, d
   );
 };
 
-const WindBarbOverlay = ({ direction, speed, dimensions }: { direction: string; speed: number; dimensions: { width: number, height: number } }) => {
-  if (!direction || speed < 0 || dimensions.width === 0) return null;
-  const speedInKnots = Math.round(speed / 1.852);
-
-  const Barb = ({ knots, x, y, rotation }: { knots: number, x: number, y: number, rotation: number }) => {
-    const staffLength = 25;
-    const barbLength = 10;
-    const halfBarbLength = 5;
-    const barbSpacing = 4;
-    const pennantHeight = barbSpacing;
-
-    // Calm wind (circle)
-    if (knots < 3) {
-      return (
-        <g transform={`translate(${x} ${y})`}>
-          <circle r="4" strokeWidth="1.5" stroke="white" fill="none" />
-        </g>
-      );
-    }
-    
-    const elements = [];
-    let remainingKnots = knots;
-    let currentY = -staffLength;
-
-    const numPennants = Math.floor(remainingKnots / 50);
-    remainingKnots -= numPennants * 50;
-    const numFullBarbs = Math.floor(remainingKnots / 10);
-    remainingKnots -= numFullBarbs * 10;
-    const numHalfBarbs = remainingKnots >= 5 ? 1 : 0;
-    
-    // Draw from the tip of the staff inwards
-    for (let i = 0; i < numPennants; i++) {
-        elements.push(<polygon key={`p${i}`} points={`0,${currentY} ${-barbLength},${currentY + pennantHeight / 2} 0,${currentY + pennantHeight}`} fill="white" />);
-        currentY += pennantHeight + 2;
-    }
-
-    if (numPennants > 0 && (numFullBarbs > 0 || numHalfBarbs > 0)) {
-        currentY += barbSpacing / 2;
-    }
-
-    for (let i = 0; i < numFullBarbs; i++) {
-        elements.push(<line key={`f${i}`} x1="0" y1={currentY} x2={-barbLength} y2={currentY - barbSpacing} />);
-        currentY += barbSpacing;
-    }
-
-    if (numHalfBarbs > 0) {
-        elements.push(<line key="h1" x1="0" y1={currentY} x2={-halfBarbLength} y2={currentY - barbSpacing / 2} />);
-    }
-
-    return (
-      <g transform={`translate(${x} ${y}) rotate(${rotation})`}>
-        <line x1="0" y1="0" x2="0" y2={-staffLength} stroke="white" strokeWidth="1.5" />
-        <g stroke="white" strokeWidth="1.5">
-           {elements}
-        </g>
-      </g>
-    );
-  };
-  
-  const gridRows = 4;
-  const gridCols = 6;
-  const barbs = [];
-  
-  for (let i = 0; i < gridRows; i++) {
-    for (let j = 0; j < gridCols; j++) {
-      const x = (j + 0.5) * dimensions.width / gridCols;
-      const y = (i + 0.5) * dimensions.height / gridRows;
-      barbs.push({ x, y });
-    }
-  }
+const DynamicWindArrowOverlay = ({ windField, dimensions }: { windField: WindFieldPoint[]; dimensions: { width: number, height: number } }) => {
+  if (!windField || windField.length === 0 || dimensions.width === 0) return null;
 
   return (
     <>
       <style>{`
-        @keyframes fade-in-barbs {
-          from { opacity: 0; }
-          to { opacity: 1; }
+        @keyframes wind-flow {
+          0% { transform: translateX(-1.5px); opacity: 0.6; }
+          50% { transform: translateX(1.5px); opacity: 1; }
+          100% { transform: translateX(-1.5px); opacity: 0.6; }
         }
-        .wind-barb-group {
-          animation: fade-in-barbs 0.5s ease-out forwards;
+        .wind-arrow-group {
+          animation: wind-flow 3s ease-in-out infinite;
           filter: drop-shadow(0 0 2px rgba(0,0,0,0.7));
         }
       `}</style>
       <svg className="absolute top-0 left-0 w-full h-full pointer-events-none" viewBox={`0 0 ${dimensions.width} ${dimensions.height}`}>
-        <g className="wind-barb-group">
-            {barbs.map((barb, index) => (
-                <Barb key={index} x={barb.x} y={barb.y} knots={speedInKnots} rotation={getRotationForBarb(direction)} />
-            ))}
-        </g>
+        {windField.map((point, index) => (
+          <g
+            key={index}
+            className="wind-arrow-group"
+            style={{ animationDelay: `${(point.x + point.y) * 10}ms` }}
+            transform={`translate(${point.x / 100 * dimensions.width}, ${point.y / 100 * dimensions.height}) rotate(${point.direction})`}
+          >
+            <path
+              d="M 0 -7 L 4 3 L -4 3 Z"
+              fill={getWindColor(point.speed)}
+              stroke="rgba(0,0,0,0.5)"
+              strokeWidth="0.5"
+            >
+              <title>{`Wind: ${point.speed.toFixed(0)} km/h, ${point.direction.toFixed(0)}°`}</title>
+            </path>
+          </g>
+        ))}
       </svg>
     </>
   );
@@ -981,11 +859,11 @@ const IsobarDisplay = ({ isobars, dimensions }: { isobars: Isobar[], dimensions:
 };
 
 
-const Tooltip = ({ visible, content, x, y }: { visible: boolean; content: string; x: number; y: number }) => {
+const Tooltip = ({ visible, content, x, y }: { visible: boolean; content: React.ReactNode; x: number; y: number }) => {
   if (!visible) return null;
   return (
     <div
-      className="fixed z-50 p-2 text-sm text-gray-800 dark:text-white bg-white dark:bg-gray-900 dark:bg-opacity-80 rounded-md shadow-lg pointer-events-none transition-opacity max-w-xs border border-gray-200 dark:border-transparent"
+      className="fixed z-50 p-3 text-sm text-gray-800 dark:text-white bg-white dark:bg-gray-900 dark:bg-opacity-80 rounded-md shadow-lg pointer-events-none transition-opacity max-w-xs border border-gray-200 dark:border-transparent"
       style={{ top: y + 15, left: x + 15 }}
     >
       {content}
@@ -1106,7 +984,7 @@ export default function App() {
   const [showHeatmap, setShowHeatmap] = useState<boolean>(false);
   const [showWind, setShowWind] = useState<boolean>(false);
   const [showIsobars, setShowIsobars] = useState<boolean>(false);
-  const [tooltip, setTooltip] = useState<{ visible: boolean; content: string; x: number; y: number }>({ visible: false, content: '', x: 0, y: 0 });
+  const [tooltip, setTooltip] = useState<{ visible: boolean; content: React.ReactNode; x: number; y: number }>({ visible: false, content: '', x: 0, y: 0 });
 
   const [includeStormTrack, setIncludeStormTrack] = useState<boolean>(true);
   const [includeAnomalies, setIncludeAnomalies] = useState<boolean>(true);
@@ -1115,6 +993,7 @@ export default function App() {
   const [liveWeatherData, setLiveWeatherData] = useState<LiveWeatherData | null>(null);
   const [isFetchingLiveWeather, setIsFetchingLiveWeather] = useState<boolean>(false);
   const [liveWeatherError, setLiveWeatherError] = useState<string | null>(null);
+  const [logButtonText, setLogButtonText] = useState('Log to Sheet');
 
 
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -1500,17 +1379,13 @@ export default function App() {
                 });
             }
 
-            // 5. Draw Wind Barbs
-            if (showWind && analysis.windDirection && typeof analysis.windSpeed !== 'undefined') {
-                const gridRows = 4;
-                const gridCols = 6;
-                for (let i = 0; i < gridRows; i++) {
-                    for (let j = 0; j < gridCols; j++) {
-                        const x = (j + 0.5) * width / gridCols;
-                        const y = (i + 0.5) * height / gridRows;
-                        drawWindBarbOnCanvas(ctx, x, y, analysis.windSpeed, analysis.windDirection);
-                    }
-                }
+            // 5. Draw Wind Arrows
+            if (showWind && analysis.windField && analysis.windField.length > 0) {
+                analysis.windField.forEach(point => {
+                    const x = point.x / 100 * width;
+                    const y = point.y / 100 * height;
+                    drawWindArrowOnCanvas(ctx, x, y, point.speed, point.direction);
+                });
             }
 
             const pngDataUrl = canvas.toDataURL('image/png');
@@ -1720,6 +1595,45 @@ export default function App() {
     }
   }, [analysis, generateComposedImageBase64, theme]);
 
+  const genericDownloadHandler = (image: {base64: string, mimeType: string} | null, prefix: string) => {
+    if (!image) return;
+    const link = document.createElement('a');
+    link.href = `data:${image.mimeType};base64,${image.base64}`;
+    const newFilename = `${prefix}_${selectedImage?.file.name.split('.')[0] || 'weather'}.png`;
+    link.download = newFilename;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  const genericShareHandler = async (image: {base64: string, mimeType: string} | null, prefix: string, titleText: string, bodyText: string) => {
+    if (!image || !selectedImage || !navigator.share) return;
+    
+    const newFilename = `${prefix}_${selectedImage.file.name.split('.')[0]}.png`;
+    const fileToShare = base64ToFile(image.base64, newFilename, image.mimeType);
+
+    try {
+      await navigator.share({
+        files: [fileToShare],
+        title: titleText,
+        text: bodyText,
+      });
+    } catch (error) {
+      console.error(`Error sharing the ${prefix} image:`, error);
+    }
+  };
+
+  const handleShareAiImage = () => {
+    if (!visualSummary || !analysis) return;
+    const summaryText = `Weather for ${analysis.location}: Temp: ${Math.round(analysis.temperature)}°C, Wind: ${Math.round(analysis.windSpeed)} km/h ${analysis.windDirection}, Precip: ${analysis.chanceOfPrecipitation}%, Humidity: ${analysis.humidity}%, UV: ${analysis.uvIndex}. Analysis: ${analysis.explanation.substring(0, 100)}...`;
+
+    if (navigator.share) {
+        genericShareHandler(visualSummary, 'visual_summary', `Weather Analysis for ${analysis.location}`, summaryText);
+    } else {
+        setIsShareModalOpen(true);
+    }
+  };
+
   const handleDownloadCurrentImage = () => {
     const displayImage = getDisplayImage();
     if (!displayImage || !selectedImage) return;
@@ -1745,12 +1659,52 @@ export default function App() {
     document.body.removeChild(link);
   };
 
+  const handleLogToSheet = () => {
+    if (!analysis || !selectedImage) return;
+
+    const GOOGLE_SHEET_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vSr9WKqTx3ajuVWF4QG9NSfaGWbkxCKDPKPlpZwvE84gmF6idfXgXd1xOzXQH2zbaKbc/pubhtml?widget=true&headers=false';
+
+    // Create a tab-separated string for easy pasting into a spreadsheet.
+    // Sanitize the explanation to prevent issues with newlines and tabs.
+    const sanitizedExplanation = `"${analysis.explanation.replace(/"/g, '""').replace(/(\r\n|\n|\r)/gm, " ")}"`;
+
+    const data = [
+      new Date().toISOString(),
+      analysis.location,
+      analysis.temperature,
+      analysis.windSpeed,
+      analysis.windDirection,
+      analysis.chanceOfPrecipitation,
+      analysis.humidity,
+      analysis.uvIndex,
+      sanitizedExplanation,
+      selectedImage.file.name,
+    ];
+
+    const tsvString = data.join('\t');
+
+    navigator.clipboard.writeText(tsvString).then(() => {
+      setLogButtonText('Copied to clipboard!');
+      window.open(GOOGLE_SHEET_URL, '_blank');
+      setTimeout(() => {
+        setLogButtonText('Log to Sheet');
+      }, 3000);
+    }).catch(err => {
+      console.error('Failed to copy data to clipboard:', err);
+      setLogButtonText('Copy Failed!');
+       setTimeout(() => {
+        setLogButtonText('Log to Sheet');
+      }, 3000);
+    });
+  };
+
 
   const triggerFileSelect = () => fileInputRef.current?.click();
   const hasStormTrack = analysis?.stormTrack && analysis.stormTrack.length > 0;
   const hasAnomalies = analysis?.anomalyStreaks && analysis.anomalyStreaks.length > 0;
   const hasStormSurge = analysis?.stormSurge && analysis.stormSurge.affectedArea.length > 0;
   const hasIsobars = analysis?.isobars && analysis.isobars.length > 0;
+  const hasWindField = analysis?.windField && analysis.windField.length > 0;
   const hasAnyOverlays = hasStormTrack || hasAnomalies || hasStormSurge || (analysis && (showHeatmap || showWind || hasIsobars));
 
   const displayImage = getDisplayImage();
@@ -1837,14 +1791,23 @@ export default function App() {
                         onLoad={() => setIsHiResImageLoaded(true)}
                     />
                    )}
+                  {viewMode === 'ai' && visualSummary && (
+                    <button
+                        onClick={handleShareAiImage}
+                        className="absolute top-3 right-3 z-20 p-2 rounded-full bg-black/50 hover:bg-black/70 text-white transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-gray-800 focus:ring-cyan-500"
+                        title="Share AI-Generated Image"
+                    >
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" viewBox="0 0 20 20" fill="currentColor"><path d="M15 8a3 3 0 10-2.977-2.63l-4.94 2.47a3 3 0 100 4.319l4.94 2.47a3 3 0 10.895-1.789l-4.94-2.47a3.027 3.027 0 000-.74l4.94-2.47C13.456 7.68 14.19 8 15 8z" /></svg>
+                    </button>
+                  )}
                   {viewMode === 'original' && hasStormTrack && includeStormTrack && <StormTrackDisplay track={analysis.stormTrack!} dimensions={imageDimensions} forecastHour={forecastHour} />}
                   {viewMode === 'original' && hasAnomalies && includeAnomalies && <AnomalyStreaksDisplay streaks={analysis.anomalyStreaks!} dimensions={imageDimensions} setTooltip={setTooltip} />}
                   {viewMode === 'original' && hasStormSurge && includeStormSurge && <StormSurgeDisplay surge={analysis.stormSurge!} dimensions={imageDimensions} />}
                   {viewMode === 'original' && showHeatmap && analysis && (
                     <TemperatureHeatmapDisplay temperature={analysis.temperature} />
                   )}
-                  {viewMode === 'original' && showWind && analysis && (
-                    <WindBarbOverlay direction={analysis.windDirection} speed={analysis.windSpeed} dimensions={imageDimensions} />
+                  {viewMode === 'original' && showWind && hasWindField && (
+                    <DynamicWindArrowOverlay windField={analysis.windField!} dimensions={imageDimensions} />
                   )}
                   {viewMode === 'original' && showIsobars && hasIsobars && (
                     <IsobarDisplay isobars={analysis.isobars!} dimensions={imageDimensions} />
@@ -1926,14 +1889,15 @@ export default function App() {
                         />
                         <span>Heatmap</span>
                       </label>
-                      <label className="flex items-center space-x-2 text-sm text-gray-800 dark:text-gray-200 cursor-pointer">
+                      <label className={`flex items-center space-x-2 text-sm text-gray-800 dark:text-gray-200 ${!hasWindField ? 'cursor-not-allowed opacity-50' : 'cursor-pointer'}`}>
                         <input
                           type="checkbox"
                           checked={showWind}
+                          disabled={!hasWindField}
                           onChange={(e) => setShowWind(e.target.checked)}
                           className="h-4 w-4 rounded bg-gray-200 border-gray-400 text-cyan-600 focus:ring-cyan-500 dark:bg-gray-700 dark:border-gray-600 dark:text-cyan-500 dark:focus:ring-cyan-600"
                         />
-                        <span>Wind Barbs</span>
+                        <span>Wind Arrows</span>
                       </label>
                       <label className={`flex items-center space-x-2 text-sm text-gray-800 dark:text-gray-200 ${!hasIsobars ? 'cursor-not-allowed opacity-50' : 'cursor-pointer'}`}>
                         <input
@@ -2008,6 +1972,18 @@ export default function App() {
             <button onClick={handleAnalyzeClick} disabled={!selectedImage || isLoading || isUploading} className="w-full mb-4 inline-flex items-center justify-center px-6 py-3 border border-transparent text-base font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-gray-100 dark:focus:ring-offset-gray-800 focus:ring-indigo-500 disabled:bg-gray-500 disabled:cursor-not-allowed">
               {isLoading ? 'Analyzing...' : 'Analyze Weather'}
             </button>
+            {analysis && !isLoading && (
+                <button
+                    onClick={handleLogToSheet}
+                    className="w-full mb-4 inline-flex items-center justify-center px-6 py-3 border border-transparent text-base font-medium rounded-md shadow-sm text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-gray-100 dark:focus:ring-offset-gray-800 focus:ring-green-500"
+                >
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-3" viewBox="0 0 20 20" fill="currentColor">
+                        <path d="M9 2a1 1 0 000 2h2a1 1 0 100-2H9z" />
+                        <path fillRule="evenodd" d="M4 5a2 2 0 012-2 3 3 0 003 3h2a3 3 0 003-3 2 2 0 012 2v11a2 2 0 01-2 2H6a2 2 0 01-2-2V5zm3 4a1 1 0 000 2h.01a1 1 0 100-2H7zm3 0a1 1 0 000 2h.01a1 1 0 100-2H10zm3 0a1 1 0 000 2h.01a1 1 0 100-2H13z" clipRule="evenodd" />
+                    </svg>
+                    {logButtonText}
+                </button>
+            )}
             <div className="bg-gray-50 dark:bg-gray-700/50 rounded-lg p-6 flex-grow min-h-[200px] flex flex-col">
               
                {(analysis || isFetchingLiveWeather) && (
@@ -2066,6 +2042,8 @@ export default function App() {
         unifiedAnalysisImage={unifiedAnalysisImage}
         selectedImage={selectedImage}
         theme={theme}
+        genericDownloadHandler={genericDownloadHandler}
+        genericShareHandler={genericShareHandler}
       />
        <MapModal 
         isOpen={isMapModalOpen}
