@@ -1,3 +1,5 @@
+
+
 import React, { useState, useCallback, useRef, useEffect } from 'react';
 import { ImageFile } from './types';
 import { explainWeatherFromImage, WeatherAnalysis, StormTrackPoint, AnomalyStreak, generateVisualSummaryImage, StormSurgeForecast, fetchLiveWeatherData, LiveWeatherData, Isobar, WindFieldPoint } from './services/geminiService';
@@ -46,22 +48,6 @@ const drawWindArrowOnCanvas = (ctx: CanvasRenderingContext2D, x: number, y: numb
     ctx.stroke();
 
     ctx.restore();
-};
-
-// Helper to scale an SVG path string from percentage-based to pixel-based coordinates
-const scaleSvgPathForCanvas = (path: string, width: number, height: number): string => {
-    const commands = path.split(/(?=[MmLlHhVvCcSsQqTtAaZz])/);
-    return commands.map(command => {
-        if (!command) return '';
-        const op = command.charAt(0);
-        const args = command.substring(1).trim().split(/[\s,]+/).map(parseFloat);
-        const scaledArgs = args.map((arg, i) => {
-        if (isNaN(arg)) return '';
-        // Scale X coordinates (even indices) by width, Y (odd indices) by height
-        return (i % 2 === 0) ? (arg / 100 * width).toFixed(2) : (arg / 100 * height).toFixed(2);
-        });
-        return op + scaledArgs.join(' ');
-    }).join('');
 };
 
 
@@ -887,9 +873,15 @@ const LiveWeatherDisplay = ({
       case 'cloud':
         return <svg xmlns="http://www.w3.org/2000/svg" className="h-10 w-10 text-gray-400" viewBox="0 0 20 20" fill="currentColor"><path d="M5.5 16a3.5 3.5 0 01-.369-6.98 4 4 0 117.753-1.977A4.5 4.5 0 1113.5 16h-8z" /></svg>;
       case 'rain':
-        return <svg xmlns="http://www.w3.org/2000/svg" className="h-10 w-10 text-blue-400" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M15.707 15.707a1 1 0 01-1.414 0l-5-5a1 1 0 010-1.414l5-5a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 010 1.414zm-6 0a1 1 0 01-1.414 0l-5-5a1 1 0 010-1.414l5-5a1 1 0 011.414 1.414L5.414 10l4.293 4.293a1 1 0 010 1.414z" clipRule="evenodd" /></svg>;
+        return <svg xmlns="http://www.w3.org/2000/svg" className="h-10 w-10 text-blue-400" viewBox="0 0 20 20" fill="currentColor">
+            <path d="M15.5 16a3.5 3.5 0 00-3.32-3.48 4 4 0 00-7.86 1.48A4.5 4.5 0 006.5 16h9z"/>
+            <path d="M8.5 16.5a1 1 0 10-2 0 1 1 0 002 0zM12.5 16.5a1 1 0 10-2 0 1 1 0 002 0z"/>
+        </svg>;
       case 'storm':
-        return <svg xmlns="http://www.w3.org/2000/svg" className="h-10 w-10 text-gray-500" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M11.3 1.046A1 1 0 0112 2v5.293l6.293-6.293a1 1 0 111.414 1.414L13.414 8.5H19a1 1 0 110 2h-5.586l6.293 6.293a1 1 0 11-1.414 1.414L12 11.414V17a1 1 0 11-2 0v-5.586L3.707 17.707a1 1 0 11-1.414-1.414L8.586 10H3a1 1 0 110-2h5.586L2.293 1.707A1 1 0 113.707.293L10 6.586V2a1 1 0 011.3-.954z" clipRule="evenodd" /></svg>;
+        return <svg xmlns="http://www.w3.org/2000/svg" className="h-10 w-10 text-gray-500" viewBox="0 0 20 20" fill="currentColor">
+            <path d="M13 2.05v.01c0 .09.02.18.04.27l1.45 4.34H16a2 2 0 011.66 3.11L13 15.89v2.06A2.05 2.05 0 0111 20a2.05 2.05 0 01-2-2.05v-2.1l-4.6-6.38A2 2 0 016 6.05h1.55l1.4-4.21c.03-.08.05-.16.05-.24v-.01a2.05 2.05 0 014 0z"/>
+            <path d="M5.5 16a3.5 3.5 0 01-.369-6.98 4 4 0 117.753-1.977A4.5 4.5 0 1113.5 16h-8z"/>
+        </svg>;
       default:
         return null;
     }
@@ -1241,38 +1233,72 @@ export default function App() {
         throw new Error("Missing required data for image composition.");
     }
 
-    const { width, height } = imageDimensions;
+    const { width: containerWidth, height: containerHeight } = imageDimensions;
     const originalImg = new Image();
 
     return new Promise<string>((resolve, reject) => {
         originalImg.onload = () => {
             const canvas = document.createElement('canvas');
-            canvas.width = width;
-            canvas.height = height;
+            canvas.width = containerWidth;
+            canvas.height = containerHeight;
             const ctx = canvas.getContext('2d');
             if (!ctx) {
                 reject(new Error("Could not get canvas context"));
                 return;
             }
 
-            // 1. Draw original image
-            ctx.drawImage(originalImg, 0, 0, width, height);
+            // --- Aspect Ratio Calculation ---
+            const imgNaturalWidth = originalImg.naturalWidth;
+            const imgNaturalHeight = originalImg.naturalHeight;
+
+            const scale = Math.min(containerWidth / imgNaturalWidth, containerHeight / imgNaturalHeight);
+            const scaledWidth = imgNaturalWidth * scale;
+            const scaledHeight = imgNaturalHeight * scale;
+            
+            const xOffset = (containerWidth - scaledWidth) / 2;
+            const yOffset = (containerHeight - scaledHeight) / 2;
+
+            // 1. Draw original image with correct aspect ratio
+            ctx.drawImage(originalImg, xOffset, yOffset, scaledWidth, scaledHeight);
+            
+            // --- Helper functions for coordinate transformation ---
+            const transformCoords = (p: {x: number, y: number}) => ({
+                x: xOffset + (p.x / 100 * scaledWidth),
+                y: yOffset + (p.y / 100 * scaledHeight),
+            });
+
+            const scaleSvgPathForCanvasWithOffset = (path: string): string => {
+                const commands = path.split(/(?=[MmLlHhVvCcSsQqTtAaZz])/);
+                return commands.map(command => {
+                    if (!command) return '';
+                    const op = command.charAt(0);
+                    const args = command.substring(1).trim().split(/[\s,]+/).map(parseFloat);
+                    const scaledArgs = args.map((arg, i) => {
+                    if (isNaN(arg)) return '';
+                    return (i % 2 === 0) 
+                        ? (xOffset + (arg / 100 * scaledWidth)).toFixed(2) 
+                        : (yOffset + (arg / 100 * scaledHeight)).toFixed(2);
+                    });
+                    return op + scaledArgs.join(' ');
+                }).join('');
+            };
 
             // 2. Draw heatmap
             if (showHeatmap && analysis.temperature) {
                 ctx.globalAlpha = 0.4;
                 ctx.fillStyle = getTemperatureColor(analysis.temperature);
-                ctx.fillRect(0, 0, width, height);
+                ctx.fillRect(xOffset, yOffset, scaledWidth, scaledHeight);
                 ctx.globalAlpha = 1.0;
             }
 
             // 3. Draw storm track, anomalies, surge
             if (includeStormTrack && analysis.stormTrack && analysis.stormTrack.length > 0) {
                 ctx.beginPath();
-                const firstPoint = analysis.stormTrack[0];
-                ctx.moveTo(firstPoint.x / 100 * width, firstPoint.y / 100 * height);
+                const firstPoint = transformCoords(analysis.stormTrack[0]);
+                ctx.moveTo(firstPoint.x, firstPoint.y);
                 analysis.stormTrack.forEach(point => {
-                    ctx.lineTo(point.x / 100 * width, point.y / 100 * height);
+                    const canvasPoint = transformCoords(point);
+                    ctx.lineTo(canvasPoint.x, canvasPoint.y);
                 });
                 ctx.strokeStyle = "rgba(255, 255, 255, 0.7)";
                 ctx.lineWidth = 2;
@@ -1281,8 +1307,9 @@ export default function App() {
                 ctx.setLineDash([]);
 
                 analysis.stormTrack.forEach(point => {
+                    const canvasPoint = transformCoords(point);
                     ctx.beginPath();
-                    ctx.arc(point.x / 100 * width, point.y / 100 * height, 6, 0, 2 * Math.PI);
+                    ctx.arc(canvasPoint.x, canvasPoint.y, 6, 0, 2 * Math.PI);
                     ctx.fillStyle = getIntensityColor(point.intensity);
                     ctx.strokeStyle = "rgba(0, 0, 0, 0.5)";
                     ctx.lineWidth = 1;
@@ -1294,11 +1321,11 @@ export default function App() {
             if (includeAnomalies && analysis.anomalyStreaks && analysis.anomalyStreaks.length > 0) {
                 analysis.anomalyStreaks.forEach(streak => {
                     ctx.beginPath();
-                    const firstPoint = streak.points[0];
-                    ctx.moveTo(firstPoint.x / 100 * width, firstPoint.y / 100 * height);
+                    const firstPoint = transformCoords(streak.points[0]);
+                    ctx.moveTo(firstPoint.x, firstPoint.y);
                     for (let i = 1; i < streak.points.length; i++) {
-                        const point = streak.points[i];
-                        ctx.lineTo(point.x / 100 * width, point.y / 100 * height);
+                        const canvasPoint = transformCoords(streak.points[i]);
+                        ctx.lineTo(canvasPoint.x, canvasPoint.y);
                     }
                     ctx.closePath();
                     ctx.fillStyle = "rgba(250, 204, 21, 0.25)";
@@ -1308,21 +1335,19 @@ export default function App() {
                     ctx.stroke();
                     
                     if (streak.points.length > 0) {
-                        const centroid = streak.points.reduce((acc, p) => ({
-                            x: acc.x + p.x / 100 * width,
-                            y: acc.y + p.y / 100 * height
-                        }), { x: 0, y: 0 });
-                        centroid.x /= streak.points.length;
-                        centroid.y /= streak.points.length;
+                        const centroidPercent = streak.points.reduce((acc, p) => ({ x: acc.x + p.x, y: acc.y + p.y }), { x: 0, y: 0 });
+                        centroidPercent.x /= streak.points.length;
+                        centroidPercent.y /= streak.points.length;
+                        const centroidCanvas = transformCoords(centroidPercent);
 
                         ctx.font = 'bold 14px sans-serif';
                         ctx.textAlign = 'center';
                         ctx.textBaseline = 'middle';
                         ctx.strokeStyle = 'black';
                         ctx.lineWidth = 3;
-                        ctx.strokeText(streak.description, centroid.x, centroid.y);
+                        ctx.strokeText(streak.description, centroidCanvas.x, centroidCanvas.y);
                         ctx.fillStyle = 'white';
-                        ctx.fillText(streak.description, centroid.x, centroid.y);
+                        ctx.fillText(streak.description, centroidCanvas.x, centroidCanvas.y);
                     }
                 });
             }
@@ -1330,9 +1355,11 @@ export default function App() {
             if (includeStormSurge && analysis.stormSurge && analysis.stormSurge.affectedArea.length > 0) {
                 const surgeArea = analysis.stormSurge.affectedArea;
                 ctx.beginPath();
-                ctx.moveTo(surgeArea[0].x / 100 * width, surgeArea[0].y / 100 * height);
+                const firstCanvasPoint = transformCoords(surgeArea[0]);
+                ctx.moveTo(firstCanvasPoint.x, firstCanvasPoint.y);
                 for (let i = 1; i < surgeArea.length; i++) {
-                    ctx.lineTo(surgeArea[i].x / 100 * width, surgeArea[i].y / 100 * height);
+                    const canvasPoint = transformCoords(surgeArea[i]);
+                    ctx.lineTo(canvasPoint.x, canvasPoint.y);
                 }
                 ctx.closePath();
                 ctx.fillStyle = "rgba(220, 38, 38, 0.4)";
@@ -1341,50 +1368,46 @@ export default function App() {
                 ctx.fill();
                 ctx.stroke();
 
-                const centroid = surgeArea.reduce((acc, p) => ({
-                    x: acc.x + p.x / 100 * width,
-                    y: acc.y + p.y / 100 * height
-                }), { x: 0, y: 0 });
-                centroid.x /= surgeArea.length;
-                centroid.y /= surgeArea.length;
+                const centroidPercent = surgeArea.reduce((acc, p) => ({ x: acc.x + p.x, y: acc.y + p.y }), { x: 0, y: 0 });
+                centroidPercent.x /= surgeArea.length;
+                centroidPercent.y /= surgeArea.length;
+                const centroidCanvas = transformCoords(centroidPercent);
 
                 ctx.font = 'bold 16px sans-serif';
                 ctx.textAlign = 'center';
                 ctx.textBaseline = 'middle';
                 ctx.strokeStyle = 'black';
                 ctx.lineWidth = 3;
-                ctx.strokeText(`${analysis.stormSurge!.surgeHeight}m Surge`, centroid.x, centroid.y);
+                ctx.strokeText(`${analysis.stormSurge!.surgeHeight}m Surge`, centroidCanvas.x, centroidCanvas.y);
                 ctx.fillStyle = 'white';
-                ctx.fillText(`${analysis.stormSurge!.surgeHeight}m Surge`, centroid.x, centroid.y);
+                ctx.fillText(`${analysis.stormSurge!.surgeHeight}m Surge`, centroidCanvas.x, centroidCanvas.y);
             }
 
             // 4. Draw Isobars
             if (showIsobars && analysis.isobars && analysis.isobars.length > 0) {
                 analysis.isobars.forEach(isobar => {
-                    const scaledPath = scaleSvgPathForCanvas(isobar.path, width, height);
+                    const scaledPath = scaleSvgPathForCanvasWithOffset(isobar.path);
                     ctx.strokeStyle = "rgba(230, 230, 230, 0.9)";
                     ctx.lineWidth = 1.5;
                     ctx.stroke(new Path2D(scaledPath));
                     
-                    const labelX = (isobar.labelPosition.x / 100) * width;
-                    const labelY = (isobar.labelPosition.y / 100) * height;
+                    const labelCanvas = transformCoords(isobar.labelPosition);
                     ctx.font = 'bold 10px sans-serif';
                     ctx.textAlign = 'center';
                     ctx.textBaseline = 'middle';
                     ctx.strokeStyle = 'rgba(0,0,0,0.8)';
                     ctx.lineWidth = 2;
-                    ctx.strokeText(isobar.pressure.toString(), labelX, labelY);
+                    ctx.strokeText(isobar.pressure.toString(), labelCanvas.x, labelCanvas.y);
                     ctx.fillStyle = 'white';
-                    ctx.fillText(isobar.pressure.toString(), labelX, labelY);
+                    ctx.fillText(isobar.pressure.toString(), labelCanvas.x, labelCanvas.y);
                 });
             }
 
             // 5. Draw Wind Arrows
             if (showWind && analysis.windField && analysis.windField.length > 0) {
                 analysis.windField.forEach(point => {
-                    const x = point.x / 100 * width;
-                    const y = point.y / 100 * height;
-                    drawWindArrowOnCanvas(ctx, x, y, point.speed, point.direction);
+                    const canvasPoint = transformCoords(point);
+                    drawWindArrowOnCanvas(ctx, canvasPoint.x, canvasPoint.y, point.speed, point.direction);
                 });
             }
 
@@ -1399,6 +1422,7 @@ export default function App() {
         originalImg.src = `data:${selectedImage.mimeType};base64,${selectedImage.base64}`;
     });
   }, [selectedImage, analysis, imageDimensions, includeStormTrack, includeAnomalies, includeStormSurge, showHeatmap, showWind, showIsobars]);
+
 
   const handleGenerateOverlayImage = useCallback(async () => {
       setIsGeneratingOverlay(true);
@@ -1698,6 +1722,62 @@ export default function App() {
     });
   };
 
+  const handleExportForLooker = () => {
+    if (!analysis || !selectedImage) return;
+
+    const escapeCsvField = (field: any): string => {
+      const stringField = String(field);
+      if (/[",\n\r]/.test(stringField)) {
+        return `"${stringField.replace(/"/g, '""')}"`;
+      }
+      return stringField;
+    };
+
+    const headers = [
+      'timestamp',
+      'location',
+      'temperature_celsius',
+      'wind_speed_kmh',
+      'wind_direction',
+      'precipitation_chance_percent',
+      'humidity_percent',
+      'uv_index',
+      'explanation',
+      'image_filename',
+    ];
+
+    const dataRow = [
+      new Date().toISOString(),
+      analysis.location,
+      analysis.temperature,
+      analysis.windSpeed,
+      analysis.windDirection,
+      analysis.chanceOfPrecipitation,
+      analysis.humidity,
+      analysis.uvIndex,
+      analysis.explanation,
+      selectedImage.file.name,
+    ].map(escapeCsvField);
+
+    const csvContent = [
+      headers.join(','),
+      dataRow.join(','),
+    ].join('\n');
+
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    const url = URL.createObjectURL(blob);
+    link.setAttribute('href', url);
+    
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+    link.setAttribute('download', `weather_analysis_${timestamp}.csv`);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
+
 
   const triggerFileSelect = () => fileInputRef.current?.click();
   const hasStormTrack = analysis?.stormTrack && analysis.stormTrack.length > 0;
@@ -1947,9 +2027,18 @@ export default function App() {
                 {hasStormTrack && (
                   <div className="mt-4 text-xs text-left bg-gray-200/50 dark:bg-gray-900/50 p-3 rounded-md">
                     <p className="font-bold text-gray-800 dark:text-gray-200 mb-2">Storm Track Legend:</p>
-                    <div className="flex items-center gap-2"><div className="w-3 h-3 rounded-full" style={{backgroundColor: getIntensityColor('5')}}></div><span className="text-gray-600 dark:text-gray-400">Cat 3-5</span></div>
-                    <div className="flex items-center gap-2"><div className="w-3 h-3 rounded-full" style={{backgroundColor: getIntensityColor('1')}}></div><span className="text-gray-600 dark:text-gray-400">Cat 1-2</span></div>
-                    <div className="flex items-center gap-2"><div className="w-3 h-3 rounded-full" style={{backgroundColor: getIntensityColor('ts')}}></div><span className="text-gray-600 dark:text-gray-400">Tropical Storm</span></div>
+                    <div className="flex items-center gap-2">
+                      <div className="w-3 h-3 rounded-full" style={{backgroundColor: getIntensityColor('5')}}></div>
+                      <span className="text-gray-600 dark:text-gray-400">Cat 3-5</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <div className="w-3 h-3 rounded-full" style={{backgroundColor: getIntensityColor('1')}}></div>
+                      <span className="text-gray-600 dark:text-gray-400">Cat 1-2</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <div className="w-3 h-3 rounded-full" style={{backgroundColor: getIntensityColor('ts')}}></div>
+                      <span className="text-gray-600 dark:text-gray-400">Tropical Storm</span>
+                    </div>
                   </div>
                 )}
               </div>
@@ -1973,16 +2062,28 @@ export default function App() {
               {isLoading ? 'Analyzing...' : 'Analyze Weather'}
             </button>
             {analysis && !isLoading && (
-                <button
-                    onClick={handleLogToSheet}
-                    className="w-full mb-4 inline-flex items-center justify-center px-6 py-3 border border-transparent text-base font-medium rounded-md shadow-sm text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-gray-100 dark:focus:ring-offset-gray-800 focus:ring-green-500"
-                >
-                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-3" viewBox="0 0 20 20" fill="currentColor">
-                        <path d="M9 2a1 1 0 000 2h2a1 1 0 100-2H9z" />
-                        <path fillRule="evenodd" d="M4 5a2 2 0 012-2 3 3 0 003 3h2a3 3 0 003-3 2 2 0 012 2v11a2 2 0 01-2 2H6a2 2 0 01-2-2V5zm3 4a1 1 0 000 2h.01a1 1 0 100-2H7zm3 0a1 1 0 000 2h.01a1 1 0 100-2H10zm3 0a1 1 0 000 2h.01a1 1 0 100-2H13z" clipRule="evenodd" />
-                    </svg>
-                    {logButtonText}
-                </button>
+                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
+                    <button
+                        onClick={handleLogToSheet}
+                        className="w-full inline-flex items-center justify-center px-6 py-3 border border-transparent text-base font-medium rounded-md shadow-sm text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-gray-100 dark:focus:ring-offset-gray-800 focus:ring-green-500"
+                    >
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-3" viewBox="0 0 20 20" fill="currentColor">
+                            <path d="M9 2a1 1 0 000 2h2a1 1 0 100-2H9z" />
+                            <path fillRule="evenodd" d="M4 5a2 2 0 012-2 3 3 0 003 3h2a3 3 0 003-3 2 2 0 012 2v11a2 2 0 01-2 2H6a2 2 0 01-2-2V5zm3 4a1 1 0 000 2h.01a1 1 0 100-2H7zm3 0a1 1 0 000 2h.01a1 1 0 100-2H10zm3 0a1 1 0 000 2h.01a1 1 0 100-2H13z" clipRule="evenodd" />
+                        </svg>
+                        {logButtonText}
+                    </button>
+                    <button
+                        onClick={handleExportForLooker}
+                        title="Export analysis as a CSV file for Looker Studio or other tools"
+                        className="w-full inline-flex items-center justify-center px-6 py-3 border border-transparent text-base font-medium rounded-md shadow-sm text-white bg-sky-600 hover:bg-sky-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-gray-100 dark:focus:ring-offset-gray-800 focus:ring-sky-500"
+                    >
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-3" viewBox="0 0 20 20" fill="currentColor">
+                           <path d="M10 2a1 1 0 00-1 1v1a1 1 0 102 0V3a1 1 0 00-1-1zM4 4h3a3 3 0 006 0h3a2 2 0 012 2v9a2 2 0 01-2 2H4a2 2 0 01-2-2V6a2 2 0 012-2zm3.5 7.118a.5.5 0 00-.5.866l2 1.154a.5.5 0 00.5 0l2-1.154a.5.5 0 00-.5-.866L10 12.268 7.5 11.118z" />
+                        </svg>
+                        Export for Looker
+                    </button>
+                </div>
             )}
             <div className="bg-gray-50 dark:bg-gray-700/50 rounded-lg p-6 flex-grow min-h-[200px] flex flex-col">
               
@@ -2024,6 +2125,7 @@ export default function App() {
               </div>
               
               <div className="flex-grow">
+                {/* FIX: Removed an extra closing div tag which was causing a JSX parsing error. */}
                 {isLoading && (<div className="flex items-center justify-center h-full"><div className="animate-spin rounded-full h-16 w-16 border-t-2 border-b-2 border-cyan-500 dark:border-cyan-400"></div></div>)}
                 {error && <div className="text-red-600 dark:text-red-400 bg-red-100 dark:bg-red-900/50 p-3 rounded-md">{error}</div>}
                 {analysis && (<div className="prose dark:prose-invert max-w-none text-gray-700 dark:text-gray-300 whitespace-pre-wrap">{analysis.explanation}</div>)}
