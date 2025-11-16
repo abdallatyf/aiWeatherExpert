@@ -221,6 +221,7 @@ const ShareModal = ({
   analysisData, 
   visualSummaryImage, 
   composedOverlayImage,
+  unifiedAnalysisImage,
   selectedImage,
   theme
 }: { 
@@ -229,17 +230,20 @@ const ShareModal = ({
   analysisData: WeatherAnalysis | null, 
   visualSummaryImage: { base64: string, mimeType: string } | null,
   composedOverlayImage: { base64: string, mimeType: string } | null,
+  unifiedAnalysisImage: { base64: string, mimeType: string } | null,
   selectedImage: ImageFile | null,
   theme: 'light' | 'dark'
 }) => {
   const [copyButtonText, setCopyButtonText] = useState('Copy');
-  const [shareMode, setShareMode] = useState<'analysis' | 'original' | 'overlay' | 'visual'>('analysis');
+  const [shareMode, setShareMode] = useState<'analysis' | 'original' | 'overlay' | 'visual' | 'unified'>('analysis');
   
   useEffect(() => {
     if (isOpen) {
       setCopyButtonText('Copy');
       // Set a smart default share mode
-      if (visualSummaryImage) {
+      if (unifiedAnalysisImage) {
+        setShareMode('unified');
+      } else if (visualSummaryImage) {
         setShareMode('visual');
       } else if (composedOverlayImage) {
         setShareMode('overlay');
@@ -247,7 +251,7 @@ const ShareModal = ({
         setShareMode('analysis');
       }
     }
-  }, [isOpen, visualSummaryImage, composedOverlayImage]);
+  }, [isOpen, visualSummaryImage, composedOverlayImage, unifiedAnalysisImage]);
 
   if (!isOpen || !analysisData) return null;
 
@@ -265,88 +269,37 @@ const ShareModal = ({
       console.error('Failed to copy link: ', err);
     });
   };
-
-  const handleDownloadVisualSummary = () => {
-    if (!visualSummaryImage) return;
-    const link = document.createElement('a');
-    link.href = `data:${visualSummaryImage.mimeType};base64,${visualSummaryImage.base64}`;
-    const newFilename = `visual_summary_${selectedImage?.file.name.split('.')[0] || 'weather'}.png`;
-    link.download = newFilename;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-  };
   
-  const handleShareVisualSummary = async () => {
-    if (!visualSummaryImage || !selectedImage || !navigator.share) return;
-    
-    const newFilename = `visual_summary_${selectedImage.file.name.split('.')[0]}.png`;
-    const fileToShare = base64ToFile(visualSummaryImage.base64, newFilename, visualSummaryImage.mimeType);
-
-    try {
-      await navigator.share({
-        files: [fileToShare],
-        title: `Weather Analysis for ${location}`,
-        text: summaryText,
-      });
-    } catch (error) {
-      console.error('Error sharing the visual summary:', error);
-    }
-  };
-  
-  const handleDownloadComposedImage = () => {
-    if (!composedOverlayImage) return;
+  const genericDownloadHandler = (image: {base64: string, mimeType: string} | null, prefix: string) => {
+    if (!image) return;
     const link = document.createElement('a');
-    link.href = `data:${composedOverlayImage.mimeType};base64,${composedOverlayImage.base64}`;
-    const newFilename = `overlay_${selectedImage?.file.name.split('.')[0] || 'weather'}.png`;
+    link.href = `data:${image.mimeType};base64,${image.base64}`;
+    const newFilename = `${prefix}_${selectedImage?.file.name.split('.')[0] || 'weather'}.png`;
     link.download = newFilename;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
   };
 
-  const handleShareComposedImage = async () => {
-    if (!composedOverlayImage || !selectedImage || !navigator.share) return;
+  const genericShareHandler = async (image: {base64: string, mimeType: string} | null, prefix: string, titleText: string, bodyText: string) => {
+    if (!image || !selectedImage || !navigator.share) return;
     
-    const newFilename = `overlay_${selectedImage.file.name.split('.')[0]}.png`;
-    const fileToShare = base64ToFile(composedOverlayImage.base64, newFilename, composedOverlayImage.mimeType);
+    const newFilename = `${prefix}_${selectedImage.file.name.split('.')[0]}.png`;
+    const fileToShare = base64ToFile(image.base64, newFilename, image.mimeType);
 
     try {
       await navigator.share({
         files: [fileToShare],
-        title: `Weather Overlay for ${location}`,
-        text: summaryText,
+        title: titleText,
+        text: bodyText,
       });
     } catch (error) {
-      console.error('Error sharing the overlay image:', error);
+      console.error(`Error sharing the ${prefix} image:`, error);
     }
   };
 
-  const handleDownloadOriginalImage = () => {
-    if (!selectedImage) return;
-    const link = document.createElement('a');
-    link.href = `data:${selectedImage.mimeType};base64,${selectedImage.base64}`;
-    link.download = selectedImage.file.name;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-  };
-  
-  const handleShareOriginalImage = async () => {
-    if (!selectedImage || !navigator.share) return;
-    
-    try {
-      await navigator.share({
-        files: [selectedImage.file],
-        title: `Weather Image: ${selectedImage.file.name}`,
-        text: `Original weather satellite image for ${location}.`,
-      });
-    } catch (error) {
-      console.error('Error sharing the original image:', error);
-    }
-  };
 
-  const getTabClass = (mode: 'analysis' | 'original' | 'overlay' | 'visual') => {
+  const getTabClass = (mode: typeof shareMode) => {
     return shareMode === mode
       ? 'border-cyan-500 text-cyan-600 dark:border-cyan-400 dark:text-cyan-400'
       : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-400 dark:text-gray-400 dark:hover:text-white dark:hover:border-gray-500';
@@ -382,36 +335,70 @@ const ShareModal = ({
         </h3>
         
         <div className="border-b border-gray-200 dark:border-gray-700 mb-4">
-            <nav className="-mb-px flex justify-center space-x-4" aria-label="Tabs">
+            <nav className="-mb-px flex justify-center space-x-2 sm:space-x-4 text-xs sm:text-sm" aria-label="Tabs">
+                 <button
+                    onClick={() => setShareMode('unified')}
+                    className={`whitespace-nowrap py-2 px-1 border-b-2 font-medium transition-colors ${getTabClass('unified')} disabled:text-gray-400 disabled:cursor-not-allowed disabled:border-transparent`}
+                    disabled={!unifiedAnalysisImage}
+                >
+                    Summary Card
+                </button>
                 <button
                     onClick={() => setShareMode('analysis')}
-                    className={`whitespace-nowrap py-2 px-1 border-b-2 font-medium text-sm transition-colors ${getTabClass('analysis')}`}
+                    className={`whitespace-nowrap py-2 px-1 border-b-2 font-medium transition-colors ${getTabClass('analysis')}`}
                 >
                     Analysis
                 </button>
-                <button
-                    onClick={() => setShareMode('original')}
-                    className={`whitespace-nowrap py-2 px-1 border-b-2 font-medium text-sm transition-colors ${getTabClass('original')}`}
-                    disabled={!selectedImage}
-                >
-                    Original
-                </button>
                  <button
                     onClick={() => setShareMode('overlay')}
-                    className={`whitespace-nowrap py-2 px-1 border-b-2 font-medium text-sm transition-colors ${getTabClass('overlay')} disabled:text-gray-600 disabled:cursor-not-allowed disabled:border-transparent`}
+                    className={`whitespace-nowrap py-2 px-1 border-b-2 font-medium transition-colors ${getTabClass('overlay')} disabled:text-gray-400 disabled:cursor-not-allowed disabled:border-transparent`}
                     disabled={!composedOverlayImage}
                 >
                     Overlay
                 </button>
                 <button
                     onClick={() => setShareMode('visual')}
-                    className={`whitespace-nowrap py-2 px-1 border-b-2 font-medium text-sm transition-colors ${getTabClass('visual')} disabled:text-gray-600 disabled:cursor-not-allowed disabled:border-transparent`}
+                    className={`whitespace-nowrap py-2 px-1 border-b-2 font-medium transition-colors ${getTabClass('visual')} disabled:text-gray-400 disabled:cursor-not-allowed disabled:border-transparent`}
                     disabled={!visualSummaryImage}
                 >
-                    AI Summary
+                    AI Image
+                </button>
+                 <button
+                    onClick={() => setShareMode('original')}
+                    className={`whitespace-nowrap py-2 px-1 border-b-2 font-medium transition-colors ${getTabClass('original')}`}
+                    disabled={!selectedImage}
+                >
+                    Original
                 </button>
             </nav>
         </div>
+        
+        {shareMode === 'unified' && unifiedAnalysisImage && (
+          <div className="space-y-4 text-center animate-fade-in">
+            <img 
+              src={`data:${unifiedAnalysisImage.mimeType};base64,${unifiedAnalysisImage.base64}`} 
+              alt="Unified analysis summary card" 
+              className="rounded-lg border-2 border-gray-200 dark:border-gray-600 max-h-64 w-auto mx-auto"
+            />
+            <p className="text-sm text-gray-600 dark:text-gray-400">Share this comprehensive summary card.</p>
+            <div className="flex flex-col gap-3 pt-2">
+              <button
+                onClick={() => genericShareHandler(unifiedAnalysisImage, 'summary_card', `Weather Summary for ${location}`, summaryText)}
+                disabled={!navigator.share}
+                className="w-full inline-flex items-center justify-center px-4 py-2 text-sm font-semibold rounded-md shadow-sm transition-colors duration-200 bg-cyan-600 hover:bg-cyan-700 text-white disabled:bg-gray-500 disabled:cursor-not-allowed"
+                title={!navigator.share ? 'Web Share API not supported' : 'Share image using native dialog'}
+              >
+                Share Card
+              </button>
+              <button
+                onClick={() => genericDownloadHandler(unifiedAnalysisImage, 'summary_card')}
+                className="w-full inline-flex items-center justify-center px-4 py-2 text-sm font-semibold rounded-md shadow-sm transition-colors duration-200 bg-gray-600 hover:bg-gray-700 text-white"
+              >
+                Download Card
+              </button>
+            </div>
+          </div>
+        )}
 
         {shareMode === 'analysis' && (
           <div className="space-y-6 animate-fade-in">
@@ -459,8 +446,8 @@ const ShareModal = ({
             />
             <p className="text-sm text-gray-600 dark:text-gray-400">Share this image with analysis overlays.</p>
             <div className="flex flex-col gap-3 pt-2">
-              <button
-                onClick={handleShareComposedImage}
+               <button
+                onClick={() => genericShareHandler(composedOverlayImage, 'overlay', `Weather Overlay for ${location}`, summaryText)}
                 disabled={!navigator.share}
                 className="w-full inline-flex items-center justify-center px-4 py-2 text-sm font-semibold rounded-md shadow-sm transition-colors duration-200 bg-cyan-600 hover:bg-cyan-700 text-white disabled:bg-gray-500 disabled:cursor-not-allowed"
                 title={!navigator.share ? 'Web Share API not supported' : 'Share image using native dialog'}
@@ -468,7 +455,7 @@ const ShareModal = ({
                 Share Image
               </button>
               <button
-                onClick={handleDownloadComposedImage}
+                onClick={() => genericDownloadHandler(composedOverlayImage, 'overlay')}
                 className="w-full inline-flex items-center justify-center px-4 py-2 text-sm font-semibold rounded-md shadow-sm transition-colors duration-200 bg-gray-600 hover:bg-gray-700 text-white"
               >
                 Download Image
@@ -487,7 +474,7 @@ const ShareModal = ({
             <p className="text-sm text-gray-600 dark:text-gray-400">Share this AI-enhanced image with your analysis baked in.</p>
             <div className="flex flex-col gap-3 pt-2">
               <button
-                onClick={handleShareVisualSummary}
+                onClick={() => genericShareHandler(visualSummaryImage, 'visual_summary', `Weather Analysis for ${location}`, summaryText)}
                 disabled={!navigator.share}
                 className="w-full inline-flex items-center justify-center px-4 py-2 text-sm font-semibold rounded-md shadow-sm transition-colors duration-200 bg-cyan-600 hover:bg-cyan-700 text-white disabled:bg-gray-500 disabled:cursor-not-allowed"
                 title={!navigator.share ? 'Web Share API not supported in your browser' : 'Share image using native dialog'}
@@ -495,7 +482,7 @@ const ShareModal = ({
                 Share Image
               </button>
               <button
-                onClick={handleDownloadVisualSummary}
+                onClick={() => genericDownloadHandler(visualSummaryImage, 'visual_summary')}
                 className="w-full inline-flex items-center justify-center px-4 py-2 text-sm font-semibold rounded-md shadow-sm transition-colors duration-200 bg-gray-600 hover:bg-gray-700 text-white"
               >
                 Download Image
@@ -514,7 +501,18 @@ const ShareModal = ({
             <p className="text-sm text-gray-600 dark:text-gray-400">Share the original unprocessed satellite image.</p>
             <div className="flex flex-col gap-3 pt-2">
               <button
-                onClick={handleShareOriginalImage}
+                onClick={async () => {
+                  if (!selectedImage || !navigator.share) return;
+                  try {
+                    await navigator.share({
+                      files: [selectedImage.file],
+                      title: `Weather Image: ${selectedImage.file.name}`,
+                      text: `Original weather satellite image for ${location}.`,
+                    });
+                  } catch (error) {
+                    console.error('Error sharing the original image:', error);
+                  }
+                }}
                 disabled={!navigator.share}
                 className="w-full inline-flex items-center justify-center px-4 py-2 text-sm font-semibold rounded-md shadow-sm transition-colors duration-200 bg-cyan-600 hover:bg-cyan-700 text-white disabled:bg-gray-500 disabled:cursor-not-allowed"
                 title={!navigator.share ? 'Web Share API not supported in your browser' : 'Share image using native dialog'}
@@ -522,7 +520,7 @@ const ShareModal = ({
                 Share Image
               </button>
               <button
-                onClick={handleDownloadOriginalImage}
+                onClick={() => genericDownloadHandler(selectedImage, 'original')}
                 className="w-full inline-flex items-center justify-center px-4 py-2 text-sm font-semibold rounded-md shadow-sm transition-colors duration-200 bg-gray-600 hover:bg-gray-700 text-white"
               >
                 Download Image
@@ -1099,9 +1097,11 @@ export default function App() {
   const [imageDimensions, setImageDimensions] = useState({ width: 0, height: 0 });
   const [visualSummary, setVisualSummary] = useState<{base64: string, mimeType: string} | null>(null);
   const [composedOverlayImage, setComposedOverlayImage] = useState<{base64: string, mimeType: string} | null>(null);
+  const [unifiedAnalysisImage, setUnifiedAnalysisImage] = useState<{base64: string, mimeType: string} | null>(null);
   const [isGeneratingVisual, setIsGeneratingVisual] = useState<boolean>(false);
   const [isGeneratingOverlay, setIsGeneratingOverlay] = useState<boolean>(false);
-  const [viewMode, setViewMode] = useState<'original' | 'overlay' | 'ai'>('original');
+  const [isGeneratingUnified, setIsGeneratingUnified] = useState<boolean>(false);
+  const [viewMode, setViewMode] = useState<'original' | 'overlay' | 'ai' | 'unified'>('original');
   const [forecastHour, setForecastHour] = useState<number>(0);
   const [showHeatmap, setShowHeatmap] = useState<boolean>(false);
   const [showWind, setShowWind] = useState<boolean>(false);
@@ -1192,6 +1192,7 @@ export default function App() {
     setError(null);
     setVisualSummary(null);
     setComposedOverlayImage(null);
+    setUnifiedAnalysisImage(null);
     setViewMode('original');
     setForecastHour(0);
     setShowHeatmap(false);
@@ -1338,6 +1339,22 @@ export default function App() {
       setError("Could not load the sample image. Please check your network connection.");
       setIsUploading(false);
     }
+  };
+
+  const getDisplayImage = () => {
+    if (!selectedImage) return null;
+    switch (viewMode) {
+      case 'unified':
+        if (unifiedAnalysisImage) return { src: `data:${unifiedAnalysisImage.mimeType};base64,${unifiedAnalysisImage.base64}`, name: 'Unified Summary Card' };
+        break;
+      case 'ai':
+        if (visualSummary) return { src: `data:${visualSummary.mimeType};base64,${visualSummary.base64}`, name: 'AI-Generated Visual Summary' };
+        break;
+      case 'overlay':
+        if (composedOverlayImage) return { src: `data:${composedOverlayImage.mimeType};base64,${composedOverlayImage.base64}`, name: 'Image with Overlays' };
+        break;
+    }
+    return { src: `data:${selectedImage.mimeType};base64,${selectedImage.base64}`, name: selectedImage.file.name };
   };
 
   const generateComposedImageBase64 = useCallback(async (options: {
@@ -1550,6 +1567,201 @@ export default function App() {
         setIsGeneratingVisual(false);
     }
   }, [analysis, generateComposedImageBase64, showHeatmap, showWind, showIsobars]);
+  
+  const generateUnifiedAnalysisImage = async (
+    analysis: WeatherAnalysis, 
+    composedImage: { base64: string, mimeType: string }, 
+    theme: 'light' | 'dark'
+  ): Promise<string> => {
+      const canvas = document.createElement('canvas');
+      const width = 800;
+      const height = 1200;
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) throw new Error("Canvas context not available");
+
+      const ICONS: { [key: string]: string } = {
+        temp: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 16V4a4 4 0 10-8 0v12a6 6 0 108 0z" /><path d="M13 16h-4" /></svg>`,
+        wind: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3.75 12h16.5m-16.5 3.75h16.5M3.75 19.5h16.5M5.625 4.5h12.75a1.875 1.875 0 010 3.75H5.625a1.875 1.875 0 010-3.75z" /></svg>`,
+        precip: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor"><path d="M17.502 19.001H6.5c-2.208 0-4-1.792-4-4s1.792-4 4-4h.198c.414-3.402 3.286-6 6.802-6 3.805 0 6.998 2.903 6.998 6.5v.5c1.381 0 2.5 1.119 2.5 2.5s-1.119 2.5-2.5 2.5z" /></svg>`,
+        humidity: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6.375 8.25a5.625 5.625 0 1111.25 0c0 3.108-2.517 5.625-5.625 5.625S6.375 11.358 6.375 8.25z" /><path d="M12 13.875V19.5" /><path d="M8.25 19.5h7.5" /></svg>`,
+        uv: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" /></svg>`,
+        dir: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19l-7-7 7-7 7 7-7 7z" transform="rotate(-45 12 12)" /><path d="M12 2v10" /></svg>`
+      };
+
+      const loadIcon = (svgString: string, color: string): Promise<HTMLImageElement> => {
+        return new Promise(resolve => {
+          const img = new Image();
+          const coloredSvg = svgString.replace('<svg', `<svg stroke="${color}"`);
+          img.src = `data:image/svg+xml;base64,${btoa(coloredSvg)}`;
+          img.onload = () => resolve(img);
+        });
+      };
+      
+      const loadImage = (base64: string, mimeType: string): Promise<HTMLImageElement> => {
+        return new Promise(resolve => {
+            const img = new Image();
+            img.src = `data:${mimeType};base64,${base64}`;
+            img.onload = () => resolve(img);
+        });
+      };
+      
+      const wrapText = (context: CanvasRenderingContext2D, text: string, x: number, y: number, maxWidth: number, lineHeight: number) => {
+        const words = text.split(' ');
+        let line = '';
+        for(let n = 0; n < words.length; n++) {
+          const testLine = line + words[n] + ' ';
+          const metrics = context.measureText(testLine);
+          const testWidth = metrics.width;
+          if (testWidth > maxWidth && n > 0) {
+            context.fillText(line, x, y);
+            line = words[n] + ' ';
+            y += lineHeight;
+          } else {
+            line = testLine;
+          }
+        }
+        context.fillText(line, x, y);
+      };
+
+      // --- Drawing ---
+      const p = 40; // padding
+      const contentWidth = width - 2 * p;
+
+      // Colors
+      const bgColor = theme === 'dark' ? '#1f2937' : '#f3f4f6';
+      const textColor = theme === 'dark' ? '#e5e7eb' : '#111827';
+      const secondaryColor = theme === 'dark' ? '#9ca3af' : '#4b5563';
+      const accentColor = '#06b6d4';
+
+      // Background
+      ctx.fillStyle = bgColor;
+      ctx.fillRect(0, 0, width, height);
+      
+      // Load assets
+      const [mapImage, tempIcon, windIcon, precipIcon, humidityIcon, uvIcon, dirIcon] = await Promise.all([
+        loadImage(composedImage.base64, composedImage.mimeType),
+        loadIcon(ICONS.temp, accentColor),
+        loadIcon(ICONS.wind, accentColor),
+        loadIcon(ICONS.precip, accentColor),
+        loadIcon(ICONS.humidity, accentColor),
+        loadIcon(ICONS.uv, accentColor),
+        loadIcon(ICONS.dir, accentColor)
+      ]);
+      
+      // Header
+      ctx.fillStyle = textColor;
+      ctx.font = 'bold 36px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText('AI Weather Analysis', width / 2, p + 30);
+      ctx.fillStyle = secondaryColor;
+      ctx.font = '24px sans-serif';
+      ctx.fillText(analysis.location, width / 2, p + 70);
+      
+      // Map Image
+      const mapY = p + 90;
+      const mapMaxHeight = 450;
+      const scale = Math.min(contentWidth / mapImage.width, mapMaxHeight / mapImage.height);
+      const mapH = mapImage.height * scale;
+      const mapW = mapImage.width * scale;
+      ctx.drawImage(mapImage, (width - mapW) / 2, mapY, mapW, mapH);
+      
+      // Metrics
+      const metricsY = mapY + mapH + 50;
+      const metricBoxWidth = contentWidth / 3;
+      const iconSize = 32;
+
+      const metrics = [
+        { icon: tempIcon, label: 'Temperature', value: `${Math.round(analysis.temperature)}°C` },
+        { icon: windIcon, label: 'Wind Speed', value: `${Math.round(analysis.windSpeed)} km/h` },
+        { icon: dirIcon, label: 'Direction', value: `${analysis.windDirection}` },
+        { icon: precipIcon, label: 'Precipitation', value: `${analysis.chanceOfPrecipitation}%` },
+        { icon: humidityIcon, label: 'Humidity', value: `${analysis.humidity}%` },
+        { icon: uvIcon, label: 'UV Index', value: `${analysis.uvIndex}` }
+      ];
+
+      metrics.forEach((metric, i) => {
+        const row = Math.floor(i / 3);
+        const col = i % 3;
+        const x = p + col * metricBoxWidth + metricBoxWidth / 2;
+        const y = metricsY + row * 90;
+        
+        ctx.drawImage(metric.icon, x - iconSize / 2, y, iconSize, iconSize);
+        ctx.fillStyle = textColor;
+        ctx.font = 'bold 20px sans-serif';
+        ctx.fillText(metric.value, x, y + iconSize + 20);
+        ctx.fillStyle = secondaryColor;
+        ctx.font = '14px sans-serif';
+        ctx.fillText(metric.label, x, y + iconSize + 40);
+      });
+      
+      // Analysis Text
+      const textY = metricsY + 2 * 90 + 20;
+      ctx.textAlign = 'left';
+      ctx.fillStyle = textColor;
+      ctx.font = '18px sans-serif';
+      wrapText(ctx, analysis.explanation, p, textY, contentWidth, 28);
+      
+      // Footer
+      ctx.fillStyle = secondaryColor;
+      ctx.font = '12px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText('Generated by AI Weather Explainer', width / 2, height - p/2);
+
+      return canvas.toDataURL('image/png').split(',')[1];
+  };
+  
+  const handleGenerateUnifiedSummary = useCallback(async () => {
+    if (!analysis) return;
+    setIsGeneratingUnified(true);
+    setError(null);
+    try {
+        const composedBase64 = await generateComposedImageBase64({
+            showHeatmap: true,
+            showWind: true,
+            showIsobars: true,
+        });
+        const unifiedImageBase64 = await generateUnifiedAnalysisImage(
+            analysis, 
+            { base64: composedBase64, mimeType: 'image/png' }, 
+            theme
+        );
+        setUnifiedAnalysisImage({ base64: unifiedImageBase64, mimeType: 'image/png' });
+        setViewMode('unified');
+        setIsShareModalOpen(true);
+    } catch (err: any) {
+        setError(err.message || 'Failed to generate summary card.');
+    } finally {
+        setIsGeneratingUnified(false);
+    }
+  }, [analysis, generateComposedImageBase64, theme]);
+
+  const handleDownloadCurrentImage = () => {
+    const displayImage = getDisplayImage();
+    if (!displayImage || !selectedImage) return;
+
+    const getPrefix = () => {
+      switch (viewMode) {
+        case 'unified': return 'summary-card';
+        case 'ai': return 'ai-summary';
+        case 'overlay': return 'overlay';
+        case 'original':
+        default: return 'original';
+      }
+    };
+
+    const originalFilename = selectedImage.file.name.split('.').slice(0, -1).join('.') || 'weather_analysis';
+    const newFilename = `${getPrefix()}_${originalFilename}.png`;
+
+    const link = document.createElement('a');
+    link.href = displayImage.src;
+    link.download = newFilename;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
 
   const triggerFileSelect = () => fileInputRef.current?.click();
   const hasStormTrack = analysis?.stormTrack && analysis.stormTrack.length > 0;
@@ -1558,24 +1770,19 @@ export default function App() {
   const hasIsobars = analysis?.isobars && analysis.isobars.length > 0;
   const hasOverlays = hasStormTrack || hasAnomalies || hasStormSurge;
 
-  const getDisplayImage = () => {
-    if (!selectedImage) return null;
-    switch (viewMode) {
-      case 'ai':
-        if (visualSummary) return { src: `data:${visualSummary.mimeType};base64,${visualSummary.base64}`, name: 'AI-Generated Visual Summary' };
-        break;
-      case 'overlay':
-        if (composedOverlayImage) return { src: `data:${composedOverlayImage.mimeType};base64,${composedOverlayImage.base64}`, name: 'Image with Overlays' };
-        break;
-    }
-    return { src: `data:${selectedImage.mimeType};base64,${selectedImage.base64}`, name: selectedImage.file.name };
-  };
   const displayImage = getDisplayImage();
 
   const getViewModeButtonClass = (mode: typeof viewMode) => {
-    return viewMode === mode
-      ? 'bg-cyan-500 text-white'
-      : 'bg-transparent text-gray-700 hover:bg-gray-300 dark:text-gray-300 dark:hover:bg-gray-600';
+    let baseClass = 'px-3 py-1 text-sm font-medium rounded-md transition-colors ';
+    if (viewMode === mode) {
+       baseClass += 'bg-cyan-500 text-white';
+    } else {
+       baseClass += 'bg-transparent text-gray-700 hover:bg-gray-300 dark:text-gray-300 dark:hover:bg-gray-600';
+    }
+    if (mode === 'unified' && !unifiedAnalysisImage) {
+        baseClass += ' hidden';
+    }
+    return baseClass;
   };
 
   return (
@@ -1643,7 +1850,7 @@ export default function App() {
                         key={displayImage.src}
                         src={displayImage.src}
                         alt={displayImage.name}
-                        className={`w-full h-full object-cover transition-all duration-700 ease-out ${isHiResImageLoaded ? 'blur-0 scale-100' : 'blur-xl scale-105'}`}
+                        className={`w-full h-full object-contain transition-all duration-700 ease-out ${isHiResImageLoaded ? 'blur-0 scale-100' : 'blur-xl scale-105'}`}
                         onLoad={() => setIsHiResImageLoaded(true)}
                     />
                    )}
@@ -1679,12 +1886,13 @@ export default function App() {
                   </div>
                 )}
                 
-                {(composedOverlayImage || visualSummary) && (
+                {(composedOverlayImage || visualSummary || unifiedAnalysisImage) && (
                   <div className="mt-4 flex justify-center bg-gray-200/50 dark:bg-gray-900/50 p-1 rounded-lg">
                       <div className="flex space-x-1 rounded-md bg-gray-300 dark:bg-gray-700 p-1" role="group">
-                          <button onClick={() => setViewMode('original')} className={`px-3 py-1 text-sm font-medium rounded-md transition-colors ${getViewModeButtonClass('original')}`}>Original</button>
-                          {composedOverlayImage && <button onClick={() => setViewMode('overlay')} className={`px-3 py-1 text-sm font-medium rounded-md transition-colors ${getViewModeButtonClass('overlay')}`}>Overlay</button>}
-                          {visualSummary && <button onClick={() => setViewMode('ai')} className={`px-3 py-1 text-sm font-medium rounded-md transition-colors ${getViewModeButtonClass('ai')}`}>AI Enhanced</button>}
+                          <button onClick={() => setViewMode('original')} className={getViewModeButtonClass('original')}>Original</button>
+                          {composedOverlayImage && <button onClick={() => setViewMode('overlay')} className={getViewModeButtonClass('overlay')}>Overlay</button>}
+                          {visualSummary && <button onClick={() => setViewMode('ai')} className={getViewModeButtonClass('ai')}>AI Enhanced</button>}
+                          {unifiedAnalysisImage && <button onClick={() => setViewMode('unified')} className={getViewModeButtonClass('unified')}>Summary Card</button>}
                       </div>
                   </div>
                 )}
@@ -1732,6 +1940,14 @@ export default function App() {
 
                 {analysis && (
                     <div className="grid grid-cols-2 sm:grid-cols-2 gap-2 mt-4">
+                        <button
+                          onClick={handleGenerateUnifiedSummary}
+                          disabled={isLoading || isGeneratingUnified || isGeneratingOverlay || isGeneratingVisual || !hasOverlays}
+                          className="w-full col-span-2 inline-flex items-center justify-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-green-600 hover:bg-green-700 disabled:bg-gray-500 disabled:cursor-not-allowed"
+                          title={!hasOverlays ? "No analysis data to generate a summary from" : "Generate a shareable summary card"}
+                        >
+                            {isGeneratingUnified ? 'Generating Card...' : 'Create Share Card'}
+                        </button>
                         <button
                             onClick={handleGenerateOverlayImage}
                             disabled={isLoading || isGeneratingOverlay || isGeneratingVisual || !hasOverlays}
@@ -1809,7 +2025,18 @@ export default function App() {
               <div className="flex items-start justify-between mb-4 gap-4 flex-wrap">
                  <div className="flex items-center gap-3">
                    <h2 className="text-xl font-semibold text-gray-800 dark:text-gray-200">Meteorological Analysis</h2>
-                   {analysis && !isLoading && (<button onClick={() => setIsShareModalOpen(true)} title="Share Analysis" className="text-gray-500 hover:text-cyan-500 dark:text-gray-400 dark:hover:text-cyan-400 transition-colors"><svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path d="M15 8a3 3 0 10-2.977-2.63l-4.94 2.47a3 3 0 100 4.319l4.94 2.47a3 3 0 10.895-1.789l-4.94-2.47a3.027 3.027 0 000-.74l4.94-2.47C13.456 7.68 14.19 8 15 8z" /></svg></button>)}
+                   {analysis && !isLoading && (
+                    <>
+                      <button onClick={() => setIsShareModalOpen(true)} title="Share Analysis" className="text-gray-500 hover:text-cyan-500 dark:text-gray-400 dark:hover:text-cyan-400 transition-colors">
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path d="M15 8a3 3 0 10-2.977-2.63l-4.94 2.47a3 3 0 100 4.319l4.94 2.47a3 3 0 10.895-1.789l-4.94-2.47a3.027 3.027 0 000-.74l4.94-2.47C13.456 7.68 14.19 8 15 8z" /></svg>
+                      </button>
+                      <button onClick={handleDownloadCurrentImage} title="Download Current Image" className="text-gray-500 hover:text-cyan-500 dark:text-gray-400 dark:hover:text-cyan-400 transition-colors">
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                            <path fillRule="evenodd" d="M3 17a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm3.293-7.707a1 1 0 011.414 0L9 10.586V3a1 1 0 112 0v7.586l1.293-1.293a1 1 0 111.414 1.414l-3 3a1 1 0 01-1.414 0l-3-3a1 1 0 010-1.414z" clipRule="evenodd" />
+                        </svg>
+                      </button>
+                    </>
+                   )}
                  </div>
                  <div className="flex items-center gap-x-4 gap-y-2 flex-wrap justify-end">
                   {analysis && !isLoading && (<>
@@ -1844,6 +2071,7 @@ export default function App() {
         analysisData={analysis}
         visualSummaryImage={visualSummary}
         composedOverlayImage={composedOverlayImage}
+        unifiedAnalysisImage={unifiedAnalysisImage}
         selectedImage={selectedImage}
         theme={theme}
       />
