@@ -1,5 +1,6 @@
 
 
+
 import React, { useState, useCallback, useRef, useEffect } from 'react';
 import { ImageFile } from './types';
 import { explainWeatherFromImage, WeatherAnalysis, StormTrackPoint, AnomalyStreak, generateVisualSummaryImage, StormSurgeForecast, fetchLiveWeatherData, LiveWeatherData, Isobar, WindFieldPoint } from './services/geminiService';
@@ -138,6 +139,67 @@ const MapModal = ({
             className="px-4 py-2 text-sm font-semibold rounded-md shadow-sm transition-colors duration-200 bg-cyan-600 hover:bg-cyan-700 text-white"
           >
             Close
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+const LookerStepsModal = ({ isOpen, onClose }: { isOpen: boolean, onClose: () => void }) => {
+  if (!isOpen) return null;
+
+  return (
+    <div 
+      className="fixed inset-0 bg-gray-800 bg-opacity-50 dark:bg-black dark:bg-opacity-75 flex items-center justify-center z-50 p-4 transition-opacity duration-300" 
+      onClick={onClose}
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="looker-modal-title"
+    >
+      <div 
+        className="bg-white dark:bg-gray-800 rounded-lg shadow-xl p-6 w-full max-w-lg relative transform transition-all duration-300 scale-95 opacity-0 animate-fade-in-scale" 
+        onClick={(e) => e.stopPropagation()}
+      >
+        <button 
+          onClick={onClose} 
+          className="absolute top-3 right-3 text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-white transition-colors"
+          aria-label="Close dialog"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" /></svg>
+        </button>
+        <h3 id="looker-modal-title" className="text-2xl font-bold text-cyan-600 dark:text-cyan-400 mb-4">
+          Connect to Looker Studio
+        </h3>
+        <p className="mb-4 text-gray-600 dark:text-gray-300">
+          Your weather analysis data has been downloaded as a CSV file. Follow these steps to visualize it in Google Looker Studio:
+        </p>
+        <ol className="list-decimal list-inside space-y-3 text-gray-700 dark:text-gray-200">
+          <li>
+            Go to <a href="https://lookerstudio.google.com/" target="_blank" rel="noopener noreferrer" className="text-cyan-500 hover:underline font-semibold">Looker Studio</a> and sign in.
+          </li>
+          <li>
+            Click on <strong>+ Create</strong> in the top left and select <strong>Data Source</strong>.
+          </li>
+          <li>
+            In the connectors list, find and select the <strong>File Upload</strong> connector.
+          </li>
+          <li>
+            Click the upload button and select the <code>weather_analysis_... .csv</code> file that was just downloaded to your computer.
+          </li>
+          <li>
+            Once the file is processed and you see your data fields, click the blue <strong>Connect</strong> button in the top right corner.
+          </li>
+          <li>
+            You're all set! Click <strong>Create Report</strong> or <strong>Explore</strong> to start building charts and graphs with your weather data.
+          </li>
+        </ol>
+        <div className="mt-6 flex justify-end">
+          <button
+            onClick={onClose}
+            className="px-4 py-2 text-sm font-semibold rounded-md shadow-sm transition-colors duration-200 bg-cyan-600 hover:bg-cyan-700 text-white"
+          >
+            Got it, thanks!
           </button>
         </div>
       </div>
@@ -964,6 +1026,7 @@ export default function App() {
   const [isHiResImageLoaded, setIsHiResImageLoaded] = useState<boolean>(false);
   const [isShareModalOpen, setIsShareModalOpen] = useState(false);
   const [isMapModalOpen, setIsMapModalOpen] = useState(false);
+  const [isLookerModalOpen, setIsLookerModalOpen] = useState(false);
   const [imageDimensions, setImageDimensions] = useState({ width: 0, height: 0 });
   const [visualSummary, setVisualSummary] = useState<{base64: string, mimeType: string} | null>(null);
   const [composedOverlayImage, setComposedOverlayImage] = useState<{base64: string, mimeType: string} | null>(null);
@@ -985,8 +1048,7 @@ export default function App() {
   const [liveWeatherData, setLiveWeatherData] = useState<LiveWeatherData | null>(null);
   const [isFetchingLiveWeather, setIsFetchingLiveWeather] = useState<boolean>(false);
   const [liveWeatherError, setLiveWeatherError] = useState<string | null>(null);
-  const [logButtonText, setLogButtonText] = useState('Log to Sheet');
-
+  
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const imageContainerRef = useRef<HTMLDivElement>(null);
@@ -1683,45 +1745,6 @@ export default function App() {
     document.body.removeChild(link);
   };
 
-  const handleLogToSheet = () => {
-    if (!analysis || !selectedImage) return;
-
-    const GOOGLE_SHEET_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vSr9WKqTx3ajuVWF4QG9NSfaGWbkxCKDPKPlpZwvE84gmF6idfXgXd1xOzXQH2zbaKbc/pubhtml?widget=true&headers=false';
-
-    // Create a tab-separated string for easy pasting into a spreadsheet.
-    // Sanitize the explanation to prevent issues with newlines and tabs.
-    const sanitizedExplanation = `"${analysis.explanation.replace(/"/g, '""').replace(/(\r\n|\n|\r)/gm, " ")}"`;
-
-    const data = [
-      new Date().toISOString(),
-      analysis.location,
-      analysis.temperature,
-      analysis.windSpeed,
-      analysis.windDirection,
-      analysis.chanceOfPrecipitation,
-      analysis.humidity,
-      analysis.uvIndex,
-      sanitizedExplanation,
-      selectedImage.file.name,
-    ];
-
-    const tsvString = data.join('\t');
-
-    navigator.clipboard.writeText(tsvString).then(() => {
-      setLogButtonText('Copied to clipboard!');
-      window.open(GOOGLE_SHEET_URL, '_blank');
-      setTimeout(() => {
-        setLogButtonText('Log to Sheet');
-      }, 3000);
-    }).catch(err => {
-      console.error('Failed to copy data to clipboard:', err);
-      setLogButtonText('Copy Failed!');
-       setTimeout(() => {
-        setLogButtonText('Log to Sheet');
-      }, 3000);
-    });
-  };
-
   const handleExportForLooker = () => {
     if (!analysis || !selectedImage) return;
 
@@ -1776,6 +1799,11 @@ export default function App() {
     link.click();
     document.body.removeChild(link);
     URL.revokeObjectURL(url);
+  };
+
+  const handleConnectToLooker = () => {
+    handleExportForLooker(); // First, trigger the download
+    setIsLookerModalOpen(true); // Then, show the instructions
   };
 
 
@@ -2064,24 +2092,24 @@ export default function App() {
             {analysis && !isLoading && (
                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
                     <button
-                        onClick={handleLogToSheet}
+                        onClick={handleConnectToLooker}
                         className="w-full inline-flex items-center justify-center px-6 py-3 border border-transparent text-base font-medium rounded-md shadow-sm text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-gray-100 dark:focus:ring-offset-gray-800 focus:ring-green-500"
                     >
                         <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-3" viewBox="0 0 20 20" fill="currentColor">
-                            <path d="M9 2a1 1 0 000 2h2a1 1 0 100-2H9z" />
-                            <path fillRule="evenodd" d="M4 5a2 2 0 012-2 3 3 0 003 3h2a3 3 0 003-3 2 2 0 012 2v11a2 2 0 01-2 2H6a2 2 0 01-2-2V5zm3 4a1 1 0 000 2h.01a1 1 0 100-2H7zm3 0a1 1 0 000 2h.01a1 1 0 100-2H10zm3 0a1 1 0 000 2h.01a1 1 0 100-2H13z" clipRule="evenodd" />
+                           <path d="M10 12a2 2 0 100-4 2 2 0 000 4z" />
+                           <path fillRule="evenodd" d="M.458 10C1.732 5.943 5.522 3 10 3s8.268 2.943 9.542 7c-1.274 4.057-5.064 7-9.542 7S1.732 14.057.458 10zM14 10a4 4 0 11-8 0 4 4 0 018 0z" clipRule="evenodd" />
                         </svg>
-                        {logButtonText}
+                        Connect to Looker
                     </button>
                     <button
                         onClick={handleExportForLooker}
-                        title="Export analysis as a CSV file for Looker Studio or other tools"
+                        title="Export analysis as a CSV file for other tools"
                         className="w-full inline-flex items-center justify-center px-6 py-3 border border-transparent text-base font-medium rounded-md shadow-sm text-white bg-sky-600 hover:bg-sky-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-gray-100 dark:focus:ring-offset-gray-800 focus:ring-sky-500"
                     >
-                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-3" viewBox="0 0 20 20" fill="currentColor">
-                           <path d="M10 2a1 1 0 00-1 1v1a1 1 0 102 0V3a1 1 0 00-1-1zM4 4h3a3 3 0 006 0h3a2 2 0 012 2v9a2 2 0 01-2 2H4a2 2 0 01-2-2V6a2 2 0 012-2zm3.5 7.118a.5.5 0 00-.5.866l2 1.154a.5.5 0 00.5 0l2-1.154a.5.5 0 00-.5-.866L10 12.268 7.5 11.118z" />
-                        </svg>
-                        Export for Looker
+                       <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-3" viewBox="0 0 20 20" fill="currentColor">
+                          <path fillRule="evenodd" d="M3 17a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm3.293-7.707a1 1 0 011.414 0L9 10.586V3a1 1 0 112 0v7.586l1.293-1.293a1 1 0 111.414 1.414l-3 3a1 1 0 01-1.414 0l-3-3a1 1 0 010-1.414z" clipRule="evenodd" />
+                       </svg>
+                        Export CSV
                     </button>
                 </div>
             )}
@@ -2151,6 +2179,10 @@ export default function App() {
         isOpen={isMapModalOpen}
         onClose={() => setIsMapModalOpen(false)}
         analysis={analysis}
+      />
+      <LookerStepsModal
+        isOpen={isLookerModalOpen}
+        onClose={() => setIsLookerModalOpen(false)}
       />
     </div>
   );
