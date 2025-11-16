@@ -11,10 +11,12 @@ export interface AnomalyStreak {
   points: {x: number; y: number}[];
   description: string;
   impact: string;
+  detailedAnalysis?: string;
 }
 
 export interface StormSurgeForecast {
-  surgeHeight: number;
+  surgeHeight: number; // Max height in meters for this level
+  level: 'Minor' | 'Moderate' | 'Major' | 'Extreme';
   affectedArea: {x: number; y: number}[];
 }
 
@@ -36,15 +38,17 @@ export interface WeatherAnalysis {
   windDirection: string;
   temperature: number;
   windSpeed: number;
+  windGust?: number;
   location: string;
   centerCoordinates?: { lat: number; lon: number };
+  imageBounds?: { topLeft: { lat: number, lon: number }, bottomRight: { lat: number, lon: number } };
   zoomLevel?: number;
   chanceOfPrecipitation: number;
   humidity: number;
   uvIndex: number;
   stormTrack?: StormTrackPoint[];
   anomalyStreaks?: AnomalyStreak[];
-  stormSurge?: StormSurgeForecast;
+  stormSurge?: StormSurgeForecast[];
   isobars?: Isobar[];
   windField?: WindFieldPoint[];
 }
@@ -57,6 +61,15 @@ export interface LiveWeatherData {
   windSpeed: number;
   windDirection: string;
   lastUpdated: string;
+}
+
+export interface ForecastDayData {
+  day: string;
+  highTemp: number;
+  lowTemp: number;
+  precipChance: number;
+  condition: string;
+  conditionIcon: 'sun' | 'cloud' | 'rain' | 'storm';
 }
 
 
@@ -78,7 +91,7 @@ export async function explainWeatherFromImage(mimeType: string, imageData: strin
         };
 
         const textPart = {
-            text: "You are a meteorologist. Analyze the weather patterns in this satellite image. Provide a detailed explanation of cloud formations and overall conditions. In this main explanation, integrate the analysis of any detected anomalies, explaining their potential impact and how they relate to the overall weather system (e.g., a dry air intrusion weakening a storm). Determine the primary wind direction, estimate wind speed in km/h, surface temperature in Celsius, chance of precipitation (%), humidity (%), and UV index. Identify the geographic location. Estimate the latitude and longitude for the center of the main weather feature ('centerCoordinates') and suggest an appropriate Google Maps zoom level ('zoomLevel', 4-12) to view it. In addition to the main `windDirection` and `windSpeed`, provide a `windField` array representing the wind patterns across the image. Create a grid of points (approximately 10x10) and for each point, provide 'x' and 'y' percentage coordinates, 'direction' in degrees (0 for North, 90 for East), and 'speed' in km/h. Additionally, if there is a trackable storm system (like a hurricane), provide a predicted track for the next 48 hours as a 'stormTrack' array. Each point in the array should contain 'hours' (forecast hour, e.g., 12), 'intensity' (e.g., 'Category 1 Hurricane'), and its 'x' and 'y' coordinates as a percentage of the image dimensions (0-100). If there are any significant atmospheric anomalies like shear lines, dry air intrusions, or unusual convective bursts, identify them as 'anomalyStreaks'. Also, look for smaller-scale phenomena like potential microbursts or localized downdrafts, describing them with more granular detail. Each streak should be a polygon represented by an array of 'points' (with 'x' and 'y' coordinates as percentages). For each streak, provide a 'description' that briefly identifies the anomaly (e.g., 'Dry Air Intrusion') and a separate 'impact' field explaining its meteorological significance and potential effect on the weather system (e.g., 'This can entrain dry air into the storm, weakening convection and hindering development'). If a major coastal storm or hurricane is detected, also provide a 'stormSurge' forecast, including 'surgeHeight' in meters and an 'affectedArea' polygon (an array of {x, y} percentage coordinates) outlining the threatened coastline. Analyze the atmospheric pressure and generate a set of isobars (lines of constant pressure) as an 'isobars' array at standard 4mb intervals (e.g., 1000, 1004, 1008). Each element should be an object with 'pressure' (millibars), 'path' (an SVG path data string where coordinates are percentages of image dimensions), and 'labelPosition' (an {x, y} percentage coordinate for placing a text label). If no significant surge is expected, this field can be omitted. If no trackable storm, anomalies, or discernible pressure patterns are present, return empty arrays for 'stormTrack', 'anomalyStreaks', and 'isobars'. If the image is not a weather map, set 'explanation' to 'ERROR: Not a weather map' and other fields to default values."
+            text: "You are a meteorologist. Analyze the weather patterns in this satellite image. Provide a detailed explanation of cloud formations and overall conditions. In this main explanation, integrate the analysis of any detected anomalies, explaining their potential impact and how they relate to the overall weather system (e.g., a dry air intrusion weakening a storm). Determine the primary wind direction, estimate wind speed in km/h, estimate peak wind gust speed in km/h (if applicable, otherwise omit), surface temperature in Celsius, chance of precipitation (%), humidity (%), and UV index. Identify the geographic location. Estimate the latitude and longitude for the center of the main weather feature ('centerCoordinates') and suggest an appropriate Google Maps zoom level ('zoomLevel', 4-12) to view it. Also, determine the latitude and longitude for the top-left and bottom-right corners of the visible map area in the image, returning it as 'imageBounds'. In addition to the main `windDirection` and `windSpeed`, provide a `windField` array representing the wind patterns across the image. Create a grid of points (approximately 10x10) and for each point, provide 'x' and 'y' percentage coordinates, 'direction' in degrees (0 for North, 90 for East), and 'speed' in km/h. Additionally, if there is a trackable storm system (like a hurricane), provide a predicted track for the next 48 hours as a 'stormTrack' array. Each point in the array should contain 'hours' (forecast hour, e.g., 12), 'intensity' (e.g., 'Category 1 Hurricane'), and its 'x' and 'y' coordinates as a percentage of the image dimensions (0-100). If there are any significant atmospheric anomalies like shear lines, dry air intrusions, or unusual convective bursts, identify them as 'anomalyStreaks'. Also, look for smaller-scale phenomena like potential microbursts or localized downdrafts, describing them with more granular detail. Each streak should be a polygon represented by an array of 'points' (with 'x' and 'y' coordinates as percentages). For each streak, provide a 'description' that briefly identifies the anomaly (e.g., 'Dry Air Intrusion'), a separate 'impact' field explaining its meteorological significance, and a 'detailedAnalysis' field providing a more granular explanation of the phenomenon, its formation, and specific short-term implications. If a major coastal storm or hurricane is detected, also provide a 'stormSurge' forecast as an array of objects. Each object should represent a different severity zone and include 'surgeHeight' in meters, a severity 'level' ('Minor', 'Moderate', 'Major', 'Extreme'), and an 'affectedArea' polygon (an array of {x, y} percentage coordinates) outlining the threatened coastline for that level. If only one severity level is present, return an array with one element. Analyze the atmospheric pressure and generate a set of isobars (lines of constant pressure) as an 'isobars' array at standard 4mb intervals (e.g., 1000, 1004, 1008). Each element should be an object with 'pressure' (millibars), 'path' (an SVG path data string where coordinates are percentages of image dimensions), and 'labelPosition' (an {x, y} percentage coordinate for placing a text label). If no significant surge is expected, this field can be omitted. If no trackable storm, anomalies, or discernible pressure patterns are present, return empty arrays for 'stormTrack', 'anomalyStreaks', and 'isobars'. If the image is not a weather map, set 'explanation' to 'ERROR: Not a weather map' and other fields to default values."
         };
         
         const responseSchema = {
@@ -100,6 +113,10 @@ export async function explainWeatherFromImage(mimeType: string, imageData: strin
               type: Type.NUMBER,
               description: "The estimated wind speed in kilometers per hour (km/h)."
             },
+            windGust: {
+              type: Type.NUMBER,
+              description: "The estimated peak wind gust speed in kilometers per hour (km/h). Omit if not significantly different from wind speed."
+            },
             location: {
               type: Type.STRING,
               description: "The inferred geographic location of the weather system (e.g., 'Gulf of Mexico', 'Eastern Atlantic')."
@@ -111,6 +128,28 @@ export async function explainWeatherFromImage(mimeType: string, imageData: strin
                 lat: { type: Type.NUMBER, description: "Latitude" },
                 lon: { type: Type.NUMBER, description: "Longitude" }
               },
+            },
+            imageBounds: {
+                type: Type.OBJECT,
+                description: "The latitude and longitude for the top-left and bottom-right corners of the image.",
+                properties: {
+                    topLeft: {
+                        type: Type.OBJECT,
+                        properties: {
+                            lat: { type: Type.NUMBER },
+                            lon: { type: Type.NUMBER }
+                        },
+                        required: ['lat', 'lon']
+                    },
+                    bottomRight: {
+                        type: Type.OBJECT,
+                        properties: {
+                            lat: { type: Type.NUMBER },
+                            lon: { type: Type.NUMBER }
+                        },
+                        required: ['lat', 'lon']
+                    }
+                }
             },
             zoomLevel: {
               type: Type.NUMBER,
@@ -161,30 +200,35 @@ export async function explainWeatherFromImage(mimeType: string, imageData: strin
                     }
                   },
                   description: { type: Type.STRING, description: "A brief identification of the anomaly (e.g., 'Dry Air Intrusion')." },
-                  impact: { type: Type.STRING, description: "An explanation of the anomaly's meteorological significance and potential impact on the weather system." }
+                  impact: { type: Type.STRING, description: "An explanation of the anomaly's meteorological significance and potential impact on the weather system." },
+                  detailedAnalysis: { type: Type.STRING, description: "A more granular, in-depth meteorological explanation of the anomaly's formation and specific implications." }
                 },
                 required: ['points', 'description', 'impact']
               }
             },
             stormSurge: {
-              type: Type.OBJECT,
-              description: "A forecast for storm surge if a major coastal storm is detected. Omitted if not applicable.",
-              properties: {
-                surgeHeight: { type: Type.NUMBER, description: "The estimated maximum storm surge height in meters." },
-                affectedArea: {
-                  type: Type.ARRAY,
-                  description: "A polygon representing the coastal area affected by the surge.",
-                  items: {
-                    type: Type.OBJECT,
-                    properties: {
-                      x: { type: Type.NUMBER, description: "X coordinate as a percentage of image width." },
-                      y: { type: Type.NUMBER, description: "Y coordinate as a percentage of image height." }
-                    },
-                    required: ['x', 'y']
+              type: Type.ARRAY,
+              description: "A forecast for storm surge if a major coastal storm is detected. Each element represents a different severity level. Omitted if not applicable.",
+              items: {
+                type: Type.OBJECT,
+                properties: {
+                  surgeHeight: { type: Type.NUMBER, description: "The estimated maximum storm surge height in meters for this zone." },
+                  level: { type: Type.STRING, description: "The severity level, one of: 'Minor', 'Moderate', 'Major', 'Extreme'." },
+                  affectedArea: {
+                    type: Type.ARRAY,
+                    description: "A polygon representing the coastal area affected by this surge level.",
+                    items: {
+                      type: Type.OBJECT,
+                      properties: {
+                        x: { type: Type.NUMBER, description: "X coordinate as a percentage of image width." },
+                        y: { type: Type.NUMBER, description: "Y coordinate as a percentage of image height." }
+                      },
+                      required: ['x', 'y']
+                    }
                   }
-                }
-              },
-              required: ['surgeHeight', 'affectedArea']
+                },
+                required: ['surgeHeight', 'level', 'affectedArea']
+              }
             },
             isobars: {
               type: Type.ARRAY,
@@ -261,8 +305,9 @@ export async function generateVisualSummaryImage(
     if (analysis.anomalyStreaks && analysis.anomalyStreaks.length > 0) {
       prompt += `- The following anomalies are highlighted: ${analysis.anomalyStreaks.map(s => s.description).join(', ')}\n`;
     }
-    if (analysis.stormSurge) {
-        prompt += `- A storm surge of ${analysis.stormSurge.surgeHeight}m is forecast for the highlighted coastal area.\n`;
+    if (analysis.stormSurge && analysis.stormSurge.length > 0) {
+        const maxSurge = Math.max(...analysis.stormSurge.map(s => s.surgeHeight));
+        prompt += `- A storm surge of up to ${maxSurge}m is forecast for the highlighted coastal area.\n`;
     }
     prompt += `Make the highlighted storm track, anomaly streaks, storm surge areas, and text labels appear more photorealistic and integrated into the satellite imagery, as if they are glowing energy patterns on the map. Enhance the readability of the text overlays. Return only the enhanced image.`;
 
@@ -333,5 +378,60 @@ export async function fetchLiveWeatherData(lat: number, lon: number): Promise<Li
         lastUpdated: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
       });
     }, 1500); // Simulate network latency
+  });
+}
+
+
+// Simulates fetching a 5-day forecast from an external API
+export async function fetch5DayForecast(lat: number, lon: number): Promise<ForecastDayData[]> {
+  return new Promise((resolve, reject) => {
+    setTimeout(() => {
+      // Simulate potential API failure
+      if (Math.random() < 0.1) {
+        return reject(new Error("5-day forecast API is currently unavailable."));
+      }
+      
+      const forecast: ForecastDayData[] = [];
+      const today = new Date();
+      const baseTemp = 15 + (lat % 20);
+
+      for (let i = 1; i <= 5; i++) {
+        const date = new Date(today);
+        date.setDate(today.getDate() + i);
+        
+        const dayOfWeek = date.toLocaleDateString('en-US', { weekday: 'short' });
+        const tempFluctuation = (Math.random() * 8) - 4;
+        const highTemp = Math.round(baseTemp + tempFluctuation + 3);
+        const lowTemp = Math.round(baseTemp + tempFluctuation - 3);
+        
+        const conditionRand = Math.random();
+        let condition: ForecastDayData['condition'];
+        let conditionIcon: ForecastDayData['conditionIcon'];
+
+        if (conditionRand < 0.5) {
+            condition = 'Sunny';
+            conditionIcon = 'sun';
+        } else if (conditionRand < 0.75) {
+            condition = 'Mixed Sun/Cloud';
+            conditionIcon = 'cloud';
+        } else if (conditionRand < 0.9) {
+            condition = 'Scattered Showers';
+            conditionIcon = 'rain';
+        } else {
+            condition = 'Possible T-Storm';
+            conditionIcon = 'storm';
+        }
+
+        forecast.push({
+          day: dayOfWeek,
+          highTemp,
+          lowTemp,
+          precipChance: Math.floor(Math.random() * 60) + 5,
+          condition,
+          conditionIcon,
+        });
+      }
+      resolve(forecast);
+    }, 1800); // Simulate network latency
   });
 }
