@@ -1357,16 +1357,11 @@ export default function App() {
     return { src: `data:${selectedImage.mimeType};base64,${selectedImage.base64}`, name: selectedImage.file.name };
   };
 
-  const generateComposedImageBase64 = useCallback(async (options: {
-      showHeatmap: boolean,
-      showWind: boolean,
-      showIsobars: boolean,
-  }): Promise<string> => {
+  const generateComposedImageBase64 = useCallback(async (): Promise<string> => {
     if (!selectedImage || !analysis || !imageContainerRef.current) {
         throw new Error("Missing required data for image composition.");
     }
 
-    const { showHeatmap, showWind, showIsobars } = options;
     const { width, height } = imageDimensions;
     const originalImg = new Image();
 
@@ -1528,17 +1523,13 @@ export default function App() {
 
         originalImg.src = `data:${selectedImage.mimeType};base64,${selectedImage.base64}`;
     });
-  }, [selectedImage, analysis, imageDimensions, includeStormTrack, includeAnomalies, includeStormSurge]);
+  }, [selectedImage, analysis, imageDimensions, includeStormTrack, includeAnomalies, includeStormSurge, showHeatmap, showWind, showIsobars]);
 
   const handleGenerateOverlayImage = useCallback(async () => {
       setIsGeneratingOverlay(true);
       setError(null);
       try {
-          const composedBase64 = await generateComposedImageBase64({
-            showHeatmap,
-            showWind,
-            showIsobars,
-          });
+          const composedBase64 = await generateComposedImageBase64();
           setComposedOverlayImage({ base64: composedBase64, mimeType: 'image/png' });
           setViewMode('overlay');
       } catch (err: any) {
@@ -1546,18 +1537,14 @@ export default function App() {
       } finally {
           setIsGeneratingOverlay(false);
       }
-  }, [generateComposedImageBase64, showHeatmap, showWind, showIsobars]);
+  }, [generateComposedImageBase64]);
 
   const handleGenerateAISummary = useCallback(async () => {
     if (!analysis) return;
     setIsGeneratingVisual(true);
     setError(null);
     try {
-        const composedBase64 = await generateComposedImageBase64({
-            showHeatmap,
-            showWind,
-            showIsobars,
-        });
+        const composedBase64 = await generateComposedImageBase64();
         const generatedImageBase64 = await generateVisualSummaryImage(composedBase64, 'image/png', analysis);
         setVisualSummary({ base64: generatedImageBase64, mimeType: 'image/png' });
         setViewMode('ai');
@@ -1566,7 +1553,7 @@ export default function App() {
     } finally {
         setIsGeneratingVisual(false);
     }
-  }, [analysis, generateComposedImageBase64, showHeatmap, showWind, showIsobars]);
+  }, [analysis, generateComposedImageBase64]);
   
   const generateUnifiedAnalysisImage = async (
     analysis: WeatherAnalysis, 
@@ -1717,11 +1704,7 @@ export default function App() {
     setIsGeneratingUnified(true);
     setError(null);
     try {
-        const composedBase64 = await generateComposedImageBase64({
-            showHeatmap: true,
-            showWind: true,
-            showIsobars: true,
-        });
+        const composedBase64 = await generateComposedImageBase64();
         const unifiedImageBase64 = await generateUnifiedAnalysisImage(
             analysis, 
             { base64: composedBase64, mimeType: 'image/png' }, 
@@ -1768,7 +1751,7 @@ export default function App() {
   const hasAnomalies = analysis?.anomalyStreaks && analysis.anomalyStreaks.length > 0;
   const hasStormSurge = analysis?.stormSurge && analysis.stormSurge.affectedArea.length > 0;
   const hasIsobars = analysis?.isobars && analysis.isobars.length > 0;
-  const hasOverlays = hasStormTrack || hasAnomalies || hasStormSurge;
+  const hasAnyOverlays = hasStormTrack || hasAnomalies || hasStormSurge || (analysis && (showHeatmap || showWind || hasIsobars));
 
   const displayImage = getDisplayImage();
 
@@ -1897,10 +1880,10 @@ export default function App() {
                   </div>
                 )}
 
-                {analysis && hasOverlays && (
+                {analysis && (
                   <div className="mt-4 p-3 bg-gray-200/50 dark:bg-gray-900/50 rounded-lg">
                     <p className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Analysis Layers:</p>
-                    <div className="flex flex-wrap gap-x-6 gap-y-2">
+                    <div className="grid grid-cols-2 gap-x-6 gap-y-2">
                       {hasStormTrack && (
                         <label className="flex items-center space-x-2 text-sm text-gray-800 dark:text-gray-200 cursor-pointer">
                           <input
@@ -1934,54 +1917,63 @@ export default function App() {
                           <span>Storm Surge</span>
                         </label>
                       )}
+                      <label className="flex items-center space-x-2 text-sm text-gray-800 dark:text-gray-200 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={showHeatmap}
+                          onChange={(e) => setShowHeatmap(e.target.checked)}
+                          className="h-4 w-4 rounded bg-gray-200 border-gray-400 text-cyan-600 focus:ring-cyan-500 dark:bg-gray-700 dark:border-gray-600 dark:text-cyan-500 dark:focus:ring-cyan-600"
+                        />
+                        <span>Heatmap</span>
+                      </label>
+                      <label className="flex items-center space-x-2 text-sm text-gray-800 dark:text-gray-200 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={showWind}
+                          onChange={(e) => setShowWind(e.target.checked)}
+                          className="h-4 w-4 rounded bg-gray-200 border-gray-400 text-cyan-600 focus:ring-cyan-500 dark:bg-gray-700 dark:border-gray-600 dark:text-cyan-500 dark:focus:ring-cyan-600"
+                        />
+                        <span>Wind Barbs</span>
+                      </label>
+                      <label className={`flex items-center space-x-2 text-sm text-gray-800 dark:text-gray-200 ${!hasIsobars ? 'cursor-not-allowed opacity-50' : 'cursor-pointer'}`}>
+                        <input
+                          type="checkbox"
+                          checked={showIsobars}
+                          disabled={!hasIsobars}
+                          onChange={(e) => setShowIsobars(e.target.checked)}
+                          className="h-4 w-4 rounded bg-gray-200 border-gray-400 text-cyan-600 focus:ring-cyan-500 dark:bg-gray-700 dark:border-gray-600 dark:text-cyan-500 dark:focus:ring-cyan-600 disabled:opacity-50"
+                        />
+                        <span>Isobars</span>
+                      </label>
                     </div>
                   </div>
                 )}
-
+                
                 {analysis && (
                     <div className="grid grid-cols-2 sm:grid-cols-2 gap-2 mt-4">
                         <button
                           onClick={handleGenerateUnifiedSummary}
-                          disabled={isLoading || isGeneratingUnified || isGeneratingOverlay || isGeneratingVisual || !hasOverlays}
+                          disabled={isLoading || isGeneratingUnified || isGeneratingOverlay || isGeneratingVisual || !hasAnyOverlays}
                           className="w-full col-span-2 inline-flex items-center justify-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-green-600 hover:bg-green-700 disabled:bg-gray-500 disabled:cursor-not-allowed"
-                          title={!hasOverlays ? "No analysis data to generate a summary from" : "Generate a shareable summary card"}
+                          title={!hasAnyOverlays ? "No analysis data to generate a summary from" : "Generate a shareable summary card"}
                         >
                             {isGeneratingUnified ? 'Generating Card...' : 'Create Share Card'}
                         </button>
                         <button
                             onClick={handleGenerateOverlayImage}
-                            disabled={isLoading || isGeneratingOverlay || isGeneratingVisual || !hasOverlays}
+                            disabled={isLoading || isGeneratingOverlay || isGeneratingVisual || !hasAnyOverlays}
                             className="w-full inline-flex items-center justify-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-teal-600 hover:bg-teal-700 disabled:bg-gray-500 disabled:cursor-not-allowed"
-                            title={!hasOverlays ? "No analysis data to generate an overlay from" : "Generate a static image with analysis overlays"}
+                            title={!hasAnyOverlays ? "No analysis data to generate an overlay from" : "Generate a static image with analysis overlays"}
                         >
                             {isGeneratingOverlay ? 'Generating...' : 'Generate Overlay Image'}
                         </button>
                         <button
                             onClick={handleGenerateAISummary}
-                            disabled={isLoading || isGeneratingVisual || isGeneratingOverlay || !hasOverlays}
+                            disabled={isLoading || isGeneratingVisual || isGeneratingOverlay || !hasAnyOverlays}
                             className="w-full inline-flex items-center justify-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-purple-600 hover:bg-purple-700 disabled:bg-gray-500 disabled:cursor-not-allowed"
-                            title={!hasOverlays ? "No analysis data to generate a summary from" : "Use AI to generate an enhanced visual summary"}
+                            title={!hasAnyOverlays ? "No analysis data to generate a summary from" : "Use AI to generate an enhanced visual summary"}
                         >
                             {isGeneratingVisual ? 'Generating...' : 'Generate AI Summary'}
-                        </button>
-                        <button
-                          onClick={() => setShowHeatmap(!showHeatmap)}
-                          className={`w-full inline-flex items-center justify-center px-4 py-2 border text-sm font-medium rounded-md shadow-sm transition-colors ${showHeatmap ? 'bg-orange-500 hover:bg-orange-600 dark:bg-orange-600 dark:hover:bg-orange-700 border-transparent text-white ring-2 ring-orange-400 ring-offset-2 ring-offset-white dark:ring-offset-gray-800' : 'bg-gray-200 hover:bg-gray-300 dark:bg-gray-700 dark:hover:bg-gray-600 border-gray-300 dark:border-gray-600 text-gray-800 dark:text-gray-300'}`}
-                        >
-                          {showHeatmap ? 'Hide' : 'Show'} Heatmap
-                        </button>
-                         <button
-                          onClick={() => setShowWind(!showWind)}
-                          className={`w-full inline-flex items-center justify-center px-4 py-2 border text-sm font-medium rounded-md shadow-sm transition-colors ${showWind ? 'bg-sky-500 hover:bg-sky-600 dark:bg-sky-600 dark:hover:bg-sky-700 border-transparent text-white ring-2 ring-sky-400 ring-offset-2 ring-offset-white dark:ring-offset-gray-800' : 'bg-gray-200 hover:bg-gray-300 dark:bg-gray-700 dark:hover:bg-gray-600 border-gray-300 dark:border-gray-600 text-gray-800 dark:text-gray-300'}`}
-                        >
-                          {showWind ? 'Hide' : 'Show'} Wind Barbs
-                        </button>
-                         <button
-                          onClick={() => setShowIsobars(!showIsobars)}
-                          disabled={!hasIsobars}
-                          className={`w-full col-span-2 inline-flex items-center justify-center px-4 py-2 border text-sm font-medium rounded-md shadow-sm transition-colors disabled:bg-gray-200 dark:disabled:bg-gray-700 disabled:text-gray-400 disabled:cursor-not-allowed ${showIsobars ? 'bg-indigo-500 hover:bg-indigo-600 dark:bg-indigo-600 dark:hover:bg-indigo-700 border-transparent text-white ring-2 ring-indigo-400 ring-offset-2 ring-offset-white dark:ring-offset-gray-800' : 'bg-gray-200 hover:bg-gray-300 dark:bg-gray-700 dark:hover:bg-gray-600 border-gray-300 dark:border-gray-600 text-gray-800 dark:text-gray-300'}`}
-                        >
-                          {showIsobars ? 'Hide' : 'Show'} Isobars
                         </button>
                     </div>
                 )}
