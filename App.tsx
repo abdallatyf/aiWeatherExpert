@@ -2,7 +2,7 @@
 
 import React, { useState, useCallback, useRef, useEffect } from 'react';
 import { ImageFile } from './types';
-import { explainWeatherFromImage, WeatherAnalysis, StormTrackPoint, AnomalyStreak, generateVisualSummaryImage, StormSurgeForecast, fetchLiveWeatherData, LiveWeatherData, Isobar, WindFieldPoint, fetch5DayForecast, ForecastDayData } from './services/geminiService';
+import { explainWeatherFromImage, WeatherAnalysis, StormTrackPoint, AnomalyStreak, generateVisualSummaryImage, StormSurgeForecast, fetchLiveWeatherData, LiveWeatherData, Isobar, WindFieldPoint, fetch5DayForecast, ForecastDayData, refineVisualSummaryImage } from './services/geminiService';
 import { HISTORICAL_IMAGE_URL } from './historicalImage';
 
 const base64ToFile = (base64: string, filename: string, mimeType: string): File => {
@@ -717,26 +717,27 @@ const getIntensityColor = (intensity: string) => {
 const StormTrackDisplay = ({ track, dimensions, forecastHour }: { track: StormTrackPoint[], dimensions: { width: number, height: number }, forecastHour: number }) => {
   if (!track || track.length === 0 || dimensions.width === 0) return null;
 
-  // FIX: Replaced `findLastIndex` with a reverse for-loop for broader compatibility, as `findLastIndex` is an ES2023 feature.
+  // Find the segment of the track where the current animated hour falls.
   let lastPassedPointIndex = -1;
-  for (let i = track.length - 1; i >= 0; i--) {
+  for (let i = 0; i < track.length; i++) {
     if (track[i].hours <= forecastHour) {
       lastPassedPointIndex = i;
-      break;
+    } else {
+      break; // Points are sorted by hour, we can stop.
     }
   }
 
-  if (lastPassedPointIndex < 0) return null;
-
+  // If before the first point, pin to the start.
+  if (lastPassedPointIndex < 0) {
+    lastPassedPointIndex = 0;
+  }
+  
   const lastPassedPoint = track[lastPassedPointIndex];
   const nextPoint = lastPassedPointIndex < track.length - 1 ? track[lastPassedPointIndex + 1] : null;
 
-  const visibleTrack = track.slice(0, lastPassedPointIndex + 1);
-  const pathPoints = visibleTrack.map(p => `${p.x / 100 * dimensions.width},${p.y / 100 * dimensions.height}`).join(' ');
-
+  // Calculate the interpolated position of the active "head" of the storm track.
   const activePoint = { ...lastPassedPoint, hours: forecastHour };
-
-  if (nextPoint) {
+  if (nextPoint && lastPassedPoint.hours < forecastHour) {
     const hourSegmentDuration = nextPoint.hours - lastPassedPoint.hours;
     if (hourSegmentDuration > 0) {
       const progressInSegment = (forecastHour - lastPassedPoint.hours) / hourSegmentDuration;
@@ -745,58 +746,82 @@ const StormTrackDisplay = ({ track, dimensions, forecastHour }: { track: StormTr
       activePoint.x = lastPassedPoint.x + (nextPoint.x - lastPassedPoint.x) * clampedProgress;
       activePoint.y = lastPassedPoint.y + (nextPoint.y - lastPassedPoint.y) * clampedProgress;
     }
+  } else if (forecastHour === 0 && track.length > 0) {
+      // Handle edge case of being exactly at hour 0
+      activePoint.x = track[0].x;
+      activePoint.y = track[0].y;
   }
 
-  const pointsForGradient = [...visibleTrack];
-  if (nextPoint) {
-    pointsForGradient.push(activePoint);
-  }
+  // The track line should be composed of segments up to the last passed point, plus one final segment to the active point.
+  const trackSegments = [];
+  const pointsOnTrack = track.filter(p => p.hours <= forecastHour);
   
-  const finalPathPoints = `${pathPoints} ${activePoint.x / 100 * dimensions.width},${activePoint.y / 100 * dimensions.height}`;
+  for (let i = 0; i < pointsOnTrack.length - 1; i++) {
+    trackSegments.push({ p1: pointsOnTrack[i], p2: pointsOnTrack[i+1] });
+  }
+  // Add the final segment from the last real point to the interpolated active point
+  if (pointsOnTrack.length > 0) {
+      const lastRealPoint = pointsOnTrack[pointsOnTrack.length - 1];
+      if (lastRealPoint.hours < forecastHour) { // Only if active point is ahead
+        trackSegments.push({ p1: lastRealPoint, p2: activePoint as StormTrackPoint });
+      }
+  }
 
   return (
     <>
       <style>{`
-        @keyframes dash-flow { to { stroke-dashoffset: -20; } }
         @keyframes pulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.5); } }
-        .storm-path { animation: dash-flow 1.5s linear infinite; }
+        @keyframes fadeInPoint {
+          from { opacity: 0; transform: scale(0.5); }
+          to { opacity: 1; transform: scale(1); }
+        }
         .storm-point {
           animation: pulse 2.5s ease-in-out infinite;
           transform-origin: center;
           transform-box: fill-box;
+          filter: drop-shadow(0 0 5px rgba(0, 0, 0, 0.7));
+        }
+        .forecast-point {
+          animation: fadeInPoint 0.4s ease-out forwards;
+          transform-origin: center;
+        }
+        .storm-path-segment {
+            filter: drop-shadow(0 0 3px rgba(0, 0, 0, 0.5));
         }
       `}</style>
       <svg className="absolute top-0 left-0 w-full h-full pointer-events-none" viewBox={`0 0 ${dimensions.width} ${dimensions.height}`}>
         <defs>
-          <linearGradient id="track-gradient" x1="0%" y1="0%" x2="100%" y2="0%">
-            {pointsForGradient.map((point, index) => (
-              <stop 
-                key={index} 
-                offset={`${(index / (pointsForGradient.length - 1 || 1)) * 100}%`} 
-                stopColor={getIntensityColor(point.intensity)} 
-              />
-            ))}
-          </linearGradient>
+          {trackSegments.map((seg, index) => (
+            <linearGradient key={index} id={`grad-${index}`}>
+              <stop offset="0%" stopColor={getIntensityColor(seg.p1.intensity)} />
+              <stop offset="100%" stopColor={getIntensityColor(seg.p2.intensity)} />
+            </linearGradient>
+          ))}
         </defs>
         
-        <polyline
-          className="storm-path"
-          points={finalPathPoints}
-          fill="none"
-          stroke="url(#track-gradient)"
-          strokeWidth="2"
-          strokeDasharray="5,5"
-        />
+        {trackSegments.map((seg, index) => (
+          <line
+            key={index}
+            className="storm-path-segment"
+            x1={seg.p1.x / 100 * dimensions.width}
+            y1={seg.p1.y / 100 * dimensions.height}
+            x2={seg.p2.x / 100 * dimensions.width}
+            y2={seg.p2.y / 100 * dimensions.height}
+            stroke={`url(#grad-${index})`}
+            strokeWidth="4"
+            strokeLinecap="round"
+          />
+        ))}
 
-        {visibleTrack.map((point) => (
+        {pointsOnTrack.map((point) => (
           <circle
             key={point.hours}
-            className="pointer-events-auto"
+            className="forecast-point pointer-events-auto"
             cx={point.x / 100 * dimensions.width}
             cy={point.y / 100 * dimensions.height}
             r={4}
             fill={getIntensityColor(point.intensity)}
-            stroke="rgba(0, 0, 0, 0.5)"
+            stroke="rgba(255, 255, 255, 0.8)"
             strokeWidth="1"
           >
             <title>{`In ${point.hours} hours: ${point.intensity}`}</title>
@@ -810,8 +835,8 @@ const StormTrackDisplay = ({ track, dimensions, forecastHour }: { track: StormTr
           cy={activePoint.y / 100 * dimensions.height}
           r={8}
           fill={getIntensityColor(activePoint.intensity)}
-          stroke="rgba(0, 0, 0, 0.5)"
-          strokeWidth="1"
+          stroke="rgba(255, 255, 255, 0.9)"
+          strokeWidth="2"
         >
           <title>{`In ${Math.round(activePoint.hours)} hours: ${activePoint.intensity}`}</title>
         </circle>
@@ -831,12 +856,19 @@ const AnomalyStreaksDisplay = ({ streaks, dimensions, setTooltip }: {
     <>
       <style>{`
         @keyframes subtle-glow {
-          0% { filter: drop-shadow(0 0 3px #fef08a) drop-shadow(0 0 1px #fef08a); opacity: 0.7; }
-          50% { filter: drop-shadow(0 0 8px #facc15) drop-shadow(0 0 2px #facc15); opacity: 1; }
-          100% { filter: drop-shadow(0 0 3px #fef08a) drop-shadow(0 0 1px #fef08a); opacity: 0.7; }
+          0%, 100% {
+            filter: drop-shadow(0 0 3px #facc15);
+            opacity: 0.6;
+          }
+          50% {
+            filter: drop-shadow(0 0 7px #facc15);
+            opacity: 0.9;
+          }
         }
         .anomaly-streak {
-          animation: subtle-glow 3.5s ease-in-out infinite;
+          animation-name: subtle-glow;
+          animation-timing-function: ease-in-out;
+          animation-iteration-count: infinite;
           stroke-linejoin: round;
           stroke-linecap: round;
         }
@@ -844,14 +876,19 @@ const AnomalyStreaksDisplay = ({ streaks, dimensions, setTooltip }: {
       <svg className="absolute top-0 left-0 w-full h-full" viewBox={`0 0 ${dimensions.width} ${dimensions.height}`}>
         {streaks.map((streak, index) => {
           const pointsStr = streak.points.map(p => `${p.x / 100 * dimensions.width},${p.y / 100 * dimensions.height}`).join(' ');
+          const isSevere = !!streak.detailedAnalysis;
+          
           return (
             <polygon
               key={index}
               points={pointsStr}
               className="anomaly-streak cursor-pointer"
-              fill="rgba(250, 204, 21, 0.25)"
+              fill={isSevere ? 'rgba(250, 204, 21, 0.35)' : 'rgba(250, 204, 21, 0.25)'}
               stroke="#facc15"
               strokeWidth="2"
+              style={{
+                animationDuration: isSevere ? '2.8s' : '4s',
+              }}
               onMouseEnter={(e) => setTooltip({
                 visible: true,
                 content: (
@@ -1311,6 +1348,8 @@ export default function App() {
   const [isGeneratingVisual, setIsGeneratingVisual] = useState<boolean>(false);
   const [isGeneratingOverlay, setIsGeneratingOverlay] = useState<boolean>(false);
   const [isGeneratingUnified, setIsGeneratingUnified] = useState<boolean>(false);
+  const [isRefining, setIsRefining] = useState<boolean>(false);
+  const [refinementPrompt, setRefinementPrompt] = useState<string>('');
   const [viewMode, setViewMode] = useState<'original' | 'overlay' | 'ai' | 'unified'>('original');
   const [forecastHour, setForecastHour] = useState<number>(0);
   const [animatedForecastHour, setAnimatedForecastHour] = useState(0);
@@ -1639,7 +1678,7 @@ export default function App() {
     });
   }, [selectedImage, imageDimensions]);
 
-  const generateComposedImageBase64 = useCallback(async (): Promise<string> => {
+  const generateComposedImageBase64 = useCallback(async (): Promise<{ base64: string, mimeType: string }> => {
     if (!selectedImage || !analysis || !imageContainerRef.current) {
         throw new Error("Missing required data for image composition.");
     }
@@ -1647,7 +1686,7 @@ export default function App() {
     const { width: containerWidth, height: containerHeight } = imageDimensions;
     const originalImg = new Image();
 
-    return new Promise<string>((resolve, reject) => {
+    return new Promise<{ base64: string, mimeType: string }>((resolve, reject) => {
         originalImg.onload = () => {
             const canvas = document.createElement('canvas');
             canvas.width = containerWidth;
@@ -1657,6 +1696,10 @@ export default function App() {
                 reject(new Error("Could not get canvas context"));
                 return;
             }
+
+            // Fill background for JPEG
+            ctx.fillStyle = theme === 'dark' ? '#1f2937' : '#ffffff';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
 
             // --- Aspect Ratio Calculation ---
             const imgNaturalWidth = originalImg.naturalWidth;
@@ -1826,8 +1869,8 @@ export default function App() {
                 });
             }
 
-            const pngDataUrl = canvas.toDataURL('image/png');
-            resolve(pngDataUrl.split(',')[1]);
+            const jpegDataUrl = canvas.toDataURL('image/jpeg', 0.9);
+            resolve({ base64: jpegDataUrl.split(',')[1], mimeType: 'image/jpeg' });
         };
 
         originalImg.onerror = () => {
@@ -1836,15 +1879,15 @@ export default function App() {
 
         originalImg.src = `data:${selectedImage.mimeType};base64,${selectedImage.base64}`;
     });
-  }, [selectedImage, analysis, imageDimensions, includeStormTrack, includeAnomalies, includeStormSurge, showHeatmap, showWind, showIsobars]);
+  }, [selectedImage, analysis, imageDimensions, includeStormTrack, includeAnomalies, includeStormSurge, showHeatmap, showWind, showIsobars, theme]);
 
 
   const handleGenerateOverlayImage = useCallback(async () => {
       setIsGeneratingOverlay(true);
       setError(null);
       try {
-          const composedBase64 = await generateComposedImageBase64();
-          setComposedOverlayImage({ base64: composedBase64, mimeType: 'image/png' });
+          const composedImage = await generateComposedImageBase64();
+          setComposedOverlayImage(composedImage);
           setViewMode('overlay');
       } catch (err: any) {
           setError(err.message || 'Failed to generate overlay image.');
@@ -1858,9 +1901,9 @@ export default function App() {
     setIsGeneratingVisual(true);
     setError(null);
     try {
-        const composedBase64 = await generateComposedImageBase64();
-        const generatedImageBase64 = await generateVisualSummaryImage(composedBase64, 'image/png', analysis);
-        setVisualSummary({ base64: generatedImageBase64, mimeType: 'image/png' });
+        const composedImage = await generateComposedImageBase64();
+        const generatedImage = await generateVisualSummaryImage(composedImage.base64, composedImage.mimeType, analysis);
+        setVisualSummary(generatedImage);
         setViewMode('ai');
     } catch (err: any) {
         setError(err.message || 'Failed to generate AI summary.');
@@ -1869,6 +1912,21 @@ export default function App() {
     }
   }, [analysis, generateComposedImageBase64]);
   
+  const handleRefineAISummary = useCallback(async () => {
+    if (!visualSummary || !refinementPrompt.trim()) return;
+    setIsRefining(true);
+    setError(null);
+    try {
+      const refinedImage = await refineVisualSummaryImage(visualSummary.base64, visualSummary.mimeType, refinementPrompt);
+      setVisualSummary(refinedImage);
+      setRefinementPrompt(''); // Clear prompt after use
+    } catch (err: any) {
+      setError(err.message || 'Failed to refine AI summary.');
+    } finally {
+      setIsRefining(false);
+    }
+  }, [visualSummary, refinementPrompt]);
+
   const generateUnifiedAnalysisImage = async (
     analysis: WeatherAnalysis, 
     imageForCard: { base64: string, mimeType: string }, 
@@ -2305,14 +2363,14 @@ export default function App() {
             {selectedImage ? (
               <div className="text-center w-full">
                 <div ref={imageContainerRef} className="relative w-full aspect-video bg-gray-200 dark:bg-gray-800/50 rounded-lg overflow-hidden mb-4 flex items-center justify-center">
-                   {(isLoading || isUploading) && (
+                   {(isLoading || isUploading || isRefining) && (
                         <div className="absolute inset-0 bg-gray-900/60 dark:bg-black/50 flex flex-col items-center justify-center z-10 rounded-lg backdrop-blur-sm transition-opacity duration-300 animate-fade-in">
                             <svg className="animate-spin h-12 w-12 text-cyan-500 dark:text-cyan-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                                 <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
                                 <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                             </svg>
                             <p className="mt-4 text-white font-semibold text-lg">
-                                {isLoading ? 'Analyzing image...' : 'Loading image...'}
+                                {isLoading ? 'Analyzing image...' : (isRefining ? 'Refining image...' : 'Loading image...')}
                             </p>
                         </div>
                     )}
@@ -2373,13 +2431,47 @@ export default function App() {
                 )}
                 
                 {(composedOverlayImage || visualSummary || unifiedAnalysisImage) && (
-                  <div className="mt-4 flex justify-center bg-gray-200/50 dark:bg-gray-900/50 p-1 rounded-lg">
-                      <div className="flex space-x-1 rounded-md bg-gray-300 dark:bg-gray-700 p-1" role="group">
-                          <button onClick={() => setViewMode('original')} className={getViewModeButtonClass('original')}>Original</button>
-                          {composedOverlayImage && <button onClick={() => setViewMode('overlay')} className={getViewModeButtonClass('overlay')}>Summary</button>}
-                          {visualSummary && <button onClick={() => setViewMode('ai')} className={getViewModeButtonClass('ai')}>AI Image</button>}
-                          {unifiedAnalysisImage && <button onClick={() => setViewMode('unified')} className={getViewModeButtonClass('unified')}>Card</button>}
+                  <div className="mt-4">
+                    <div className="flex justify-center bg-gray-200/50 dark:bg-gray-900/50 p-1 rounded-lg">
+                        <div className="flex space-x-1 rounded-md bg-gray-300 dark:bg-gray-700 p-1" role="group">
+                            <button onClick={() => setViewMode('original')} className={getViewModeButtonClass('original')}>Original</button>
+                            {composedOverlayImage && <button onClick={() => setViewMode('overlay')} className={getViewModeButtonClass('overlay')}>Summary</button>}
+                            {visualSummary && <button onClick={() => setViewMode('ai')} className={getViewModeButtonClass('ai')}>AI Image</button>}
+                            {unifiedAnalysisImage && <button onClick={() => setViewMode('unified')} className={getViewModeButtonClass('unified')}>Card</button>}
+                        </div>
+                    </div>
+                    {viewMode === 'ai' && visualSummary && (
+                      <div className="mt-4 animate-fade-in">
+                        <div className="flex gap-2">
+                          <input
+                            type="text"
+                            value={refinementPrompt}
+                            onChange={(e) => setRefinementPrompt(e.target.value)}
+                            onKeyDown={(e) => { if (e.key === 'Enter') handleRefineAISummary(); }}
+                            placeholder="e.g., 'add lightning strikes'"
+                            className="flex-grow w-full px-3 py-2 text-sm text-gray-800 bg-gray-100 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-cyan-500 dark:bg-gray-700 dark:border-gray-600 dark:text-gray-200 dark:placeholder-gray-400"
+                            disabled={isRefining}
+                            aria-label="Refine AI image prompt"
+                          />
+                          <button
+                            onClick={handleRefineAISummary}
+                            disabled={isRefining || !refinementPrompt.trim()}
+                            className="inline-flex items-center justify-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-purple-600 hover:bg-purple-700 disabled:bg-gray-500 disabled:cursor-not-allowed"
+                          >
+                            {isRefining ? (
+                              <svg className="animate-spin -ml-1 mr-2 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                              </svg>
+                            ) : (
+                              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2 -ml-1" viewBox="0 0 20 20" fill="currentColor"><path d="M13.586 3.586a2 2 0 112.828 2.828l-.793.793-2.828-2.828.793-.793zM11.379 5.793L3 14.172V17h2.828l8.38-8.379-2.83-2.828z" /></svg>
+                            )}
+                            Refine
+                          </button>
+                        </div>
+                        <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">Describe a change to the AI-enhanced image.</p>
                       </div>
+                    )}
                   </div>
                 )}
 
