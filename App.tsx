@@ -1,6 +1,7 @@
 
 
 
+
 import React, { useState, useCallback, useRef, useEffect } from 'react';
 import { ImageFile } from './types';
 import { explainWeatherFromImage, WeatherAnalysis, StormTrackPoint, AnomalyStreak, generateVisualSummaryImage, StormSurgeForecast, fetchLiveWeatherData, LiveWeatherData, Isobar, WindFieldPoint } from './services/geminiService';
@@ -231,12 +232,10 @@ const ShareModal = ({
   genericDownloadHandler: (image: { base64: string; mimeType: string; } | null, prefix: string) => void,
   genericShareHandler: (image: { base64: string; mimeType: string; } | null, prefix: string, titleText: string, bodyText: string) => Promise<void>
 }) => {
-  const [copyButtonText, setCopyButtonText] = useState('Copy');
-  const [shareMode, setShareMode] = useState<'analysis' | 'original' | 'overlay' | 'visual' | 'unified'>('analysis');
+  const [shareMode, setShareMode] = useState<'original' | 'overlay' | 'visual' | 'unified'>('unified');
   
   useEffect(() => {
     if (isOpen) {
-      setCopyButtonText('Copy');
       // Set a smart default share mode
       if (unifiedAnalysisImage) {
         setShareMode('unified');
@@ -245,7 +244,7 @@ const ShareModal = ({
       } else if (composedOverlayImage) {
         setShareMode('overlay');
       } else {
-        setShareMode('analysis');
+        setShareMode('original');
       }
     }
   }, [isOpen, visualSummaryImage, composedOverlayImage, unifiedAnalysisImage]);
@@ -255,27 +254,12 @@ const ShareModal = ({
   const { location, temperature, windDirection, windSpeed, explanation, chanceOfPrecipitation, humidity, uvIndex } = analysisData;
 
   const summaryText = `Weather for ${location}: Temp: ${Math.round(temperature)}°C, Wind: ${Math.round(windSpeed)} km/h ${windDirection}, Precip: ${chanceOfPrecipitation}%, Humidity: ${humidity}%, UV: ${uvIndex}. Analysis: ${explanation.substring(0, 100)}...`;
-  const encodedSummary = encodeURIComponent(summaryText);
-  const shareLink = `https://www.google.com/search?q=${encodedSummary}`;
   
-  const handleCopyLink = () => {
-    navigator.clipboard.writeText(shareLink).then(() => {
-      setCopyButtonText('Copied!');
-      setTimeout(() => setCopyButtonText('Copy'), 2000);
-    }).catch(err => {
-      console.error('Failed to copy link: ', err);
-    });
-  };
-
   const getTabClass = (mode: typeof shareMode) => {
     return shareMode === mode
       ? 'border-cyan-500 text-cyan-600 dark:border-cyan-400 dark:text-cyan-400'
       : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-400 dark:text-gray-400 dark:hover:text-white dark:hover:border-gray-500';
   };
-  
-  const qrBgColor = theme === 'dark' ? '374151' : 'f3f4f6';
-  const qrColor = theme === 'dark' ? 'e5e7eb' : '111827';
-  const qrApiUrl = `https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${encodedSummary}&bgcolor=${qrBgColor}&color=${qrColor}&qzone=1`;
 
   return (
     <div 
@@ -310,12 +294,6 @@ const ShareModal = ({
                     disabled={!unifiedAnalysisImage}
                 >
                     Summary Card
-                </button>
-                <button
-                    onClick={() => setShareMode('analysis')}
-                    className={`whitespace-nowrap py-2 px-1 border-b-2 font-medium transition-colors ${getTabClass('analysis')}`}
-                >
-                    Analysis
                 </button>
                  <button
                     onClick={() => setShareMode('overlay')}
@@ -364,43 +342,6 @@ const ShareModal = ({
               >
                 Download Card
               </button>
-            </div>
-          </div>
-        )}
-
-        {shareMode === 'analysis' && (
-          <div className="space-y-6 animate-fade-in">
-            <div className="flex flex-col items-center justify-center bg-gray-100 dark:bg-gray-700 p-4 rounded-lg">
-              <img src={qrApiUrl} alt="QR Code for weather analysis" className="rounded-md" />
-              <p className="mt-3 text-sm text-gray-600 dark:text-gray-300">Scan QR code to share analysis</p>
-            </div>
-            <div>
-              <label htmlFor="share-link" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2 text-center">Or Copy Link</label>
-              <div className="flex gap-2">
-                <input
-                  id="share-link"
-                  type="text"
-                  readOnly
-                  value={shareLink}
-                  className="w-full bg-gray-100 text-gray-900 border border-gray-300 rounded-md px-3 py-1.5 text-sm focus:ring-cyan-500 focus:border-cyan-500 dark:bg-gray-600 dark:text-gray-200 dark:border-gray-500"
-                  onClick={(e) => (e.target as HTMLInputElement).select()}
-                />
-                <button
-                  onClick={handleCopyLink}
-                  className="px-4 py-1.5 text-sm font-semibold rounded-md shadow-sm transition-colors duration-200 bg-cyan-600 hover:bg-cyan-700 text-white w-24 text-center"
-                >
-                  {copyButtonText}
-                </button>
-              </div>
-            </div>
-            <hr className="border-gray-200 dark:border-gray-600" />
-            <div className="flex justify-center items-center gap-6">
-              <a href={`mailto:?subject=Weather Analysis for ${location}&body=${encodedSummary}`} target="_blank" rel="noopener noreferrer" className="text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-white transition-colors" title="Share via Email">
-                <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8" viewBox="0 0 20 20" fill="currentColor"><path d="M2.003 5.884L10 9.882l7.997-3.998A2 2 0 0016 4H4a2 2 0 00-1.997 1.884z" /><path d="M18 8.118l-8 4-8-4V14a2 2 0 002 2h12a2 2 0 002-2V8.118z" /></svg>
-              </a>
-              <a href={`https://twitter.com/intent/tweet?text=${encodedSummary}`} target="_blank" rel="noopener noreferrer" className="text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-white transition-colors" title="Share on Twitter">
-                <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8" fill="currentColor" viewBox="0 0 24 24"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z" /></svg>
-              </a>
             </div>
           </div>
         )}
@@ -1290,6 +1231,48 @@ export default function App() {
     return { src: `data:${selectedImage.mimeType};base64,${selectedImage.base64}`, name: selectedImage.file.name };
   };
 
+  const generateBaseImageForCard = useCallback(async (): Promise<{ base64: string, mimeType: string }> => {
+    if (!selectedImage || !imageContainerRef.current) {
+        throw new Error("Missing required data for image composition.");
+    }
+
+    const { width: containerWidth, height: containerHeight } = imageDimensions;
+    const originalImg = new Image();
+
+    return new Promise<{ base64: string, mimeType: string }>((resolve, reject) => {
+        originalImg.onload = () => {
+            const canvas = document.createElement('canvas');
+            canvas.width = containerWidth;
+            canvas.height = containerHeight;
+            const ctx = canvas.getContext('2d');
+            if (!ctx) {
+                reject(new Error("Could not get canvas context"));
+                return;
+            }
+
+            // --- Aspect Ratio Calculation ---
+            const scale = Math.min(containerWidth / originalImg.naturalWidth, containerHeight / originalImg.naturalHeight);
+            const scaledWidth = originalImg.naturalWidth * scale;
+            const scaledHeight = originalImg.naturalHeight * scale;
+            
+            const xOffset = (containerWidth - scaledWidth) / 2;
+            const yOffset = (containerHeight - scaledHeight) / 2;
+
+            // Draw original image with correct aspect ratio
+            ctx.drawImage(originalImg, xOffset, yOffset, scaledWidth, scaledHeight);
+
+            const pngDataUrl = canvas.toDataURL('image/png');
+            resolve({ base64: pngDataUrl.split(',')[1], mimeType: 'image/png' });
+        };
+
+        originalImg.onerror = () => {
+            reject(new Error("Failed to load original image for composition."));
+        };
+
+        originalImg.src = `data:${selectedImage.mimeType};base64,${selectedImage.base64}`;
+    });
+  }, [selectedImage, imageDimensions]);
+
   const generateComposedImageBase64 = useCallback(async (): Promise<string> => {
     if (!selectedImage || !analysis || !imageContainerRef.current) {
         throw new Error("Missing required data for image composition.");
@@ -1518,7 +1501,7 @@ export default function App() {
   
   const generateUnifiedAnalysisImage = async (
     analysis: WeatherAnalysis, 
-    composedImage: { base64: string, mimeType: string }, 
+    imageForCard: { base64: string, mimeType: string }, 
     theme: 'light' | 'dark'
   ): Promise<string> => {
       const canvas = document.createElement('canvas');
@@ -1589,7 +1572,7 @@ export default function App() {
       
       // Load assets
       const [mapImage, tempIcon, windIcon, precipIcon, humidityIcon, uvIcon, dirIcon] = await Promise.all([
-        loadImage(composedImage.base64, composedImage.mimeType),
+        loadImage(imageForCard.base64, imageForCard.mimeType),
         loadIcon(ICONS.temp, accentColor),
         loadIcon(ICONS.wind, accentColor),
         loadIcon(ICONS.precip, accentColor),
@@ -1661,14 +1644,14 @@ export default function App() {
   };
   
   const handleGenerateUnifiedSummary = useCallback(async () => {
-    if (!analysis) return;
+    if (!analysis || !selectedImage) return;
     setIsGeneratingUnified(true);
     setError(null);
     try {
-        const composedBase64 = await generateComposedImageBase64();
+        const baseImageForCard = await generateBaseImageForCard();
         const unifiedImageBase64 = await generateUnifiedAnalysisImage(
             analysis, 
-            { base64: composedBase64, mimeType: 'image/png' }, 
+            baseImageForCard,
             theme
         );
         setUnifiedAnalysisImage({ base64: unifiedImageBase64, mimeType: 'image/png' });
@@ -1679,7 +1662,7 @@ export default function App() {
     } finally {
         setIsGeneratingUnified(false);
     }
-  }, [analysis, generateComposedImageBase64, theme]);
+  }, [analysis, selectedImage, generateBaseImageForCard, theme]);
 
   const genericDownloadHandler = (image: {base64: string, mimeType: string} | null, prefix: string) => {
     if (!image) return;
@@ -2025,9 +2008,9 @@ export default function App() {
                     <div className="grid grid-cols-2 sm:grid-cols-2 gap-2 mt-4">
                         <button
                           onClick={handleGenerateUnifiedSummary}
-                          disabled={isLoading || isGeneratingUnified || isGeneratingOverlay || isGeneratingVisual || !hasAnyOverlays}
+                          disabled={isLoading || isGeneratingUnified || isGeneratingOverlay || isGeneratingVisual}
                           className="w-full col-span-2 inline-flex items-center justify-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-green-600 hover:bg-green-700 disabled:bg-gray-500 disabled:cursor-not-allowed"
-                          title={!hasAnyOverlays ? "No analysis data to generate a summary from" : "Generate a shareable summary card"}
+                          title={"Generate a shareable summary card with the original image and analysis"}
                         >
                             {isGeneratingUnified ? 'Generating Card...' : 'Create Share Card'}
                         </button>
