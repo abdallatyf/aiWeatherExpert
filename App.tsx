@@ -2,7 +2,7 @@ import React, { useState, useCallback, useRef, useEffect } from 'react';
 import QRCode from 'qrcode';
 import { zlibSync, unzlibSync } from 'fflate';
 import { ImageFile, AnalysisResult, SavedAnalysis, StorableImage } from './types';
-import { explainWeatherFromImage } from './services/geminiService';
+import { explainWeatherFromImage, analyzeWeatherMotion } from './services/geminiService';
 import { HISTORICAL_IMAGE_MIMETYPE, HISTORICAL_IMAGE_BASE64 } from './historicalImageData';
 
 // --- Helper Components defined inside App.tsx to reduce file count ---
@@ -97,15 +97,46 @@ const ArrowPathIcon: React.FC<{ className?: string }> = ({ className }) => (
     </svg>
 );
 
+const FilmIcon: React.FC<{ className?: string }> = ({ className }) => (
+    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className={className}>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 15.75l5.159-5.159a2.25 2.25 0 0 1 3.182 0l5.159 5.159m-1.5-1.5 1.409-1.409a2.25 2.25 0 0 1 3.182 0l2.909 2.909m-18 3.75h16.5a1.5 1.5 0 0 0 1.5-1.5V6a1.5 1.5 0 0 0-1.5-1.5H3.75A1.5 1.5 0 0 0 2.25 6v12a1.5 1.5 0 0 0 1.5 1.5Zm10.5-11.25h.008v.008h-.008V8.25Zm.375 0a.375.375 0 1 1-.75 0 .375.375 0 0 1 .75 0Z" />
+    </svg>
+);
+
+const WindIcon: React.FC<{ className?: string }> = ({ className }) => (
+    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className={className}>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M12 6.75a.75.75 0 1 1 0-1.5.75.75 0 0 1 0 1.5ZM12 12.75a.75.75 0 1 1 0-1.5.75.75 0 0 1 0 1.5ZM12 18.75a.75.75 0 1 1 0-1.5.75.75 0 0 1 0 1.5Z" />
+        <path strokeLinecap="round" strokeLinejoin="round" d="M3.375 7.5c0-1.036.84-1.875 1.875-1.875h.375a3.75 3.75 0 0 1 3.75 3.75v1.5m-5.625 4.5c0-1.036.84-1.875 1.875-1.875h.375a3.75 3.75 0 0 1 3.75 3.75v1.5m-5.625 4.5c0-1.036.84-1.875 1.875-1.875h.375a3.75 3.75 0 0 1 3.75 3.75v1.5M19.5 7.5c0-1.036-.84-1.875-1.875-1.875h-.375a3.75 3.75 0 0 0-3.75 3.75v1.5m5.625 4.5c0-1.036-.84-1.875-1.875-1.875h-.375a3.75 3.75 0 0 0-3.75 3.75v1.5m5.625 4.5c0-1.036-.84-1.875-1.875-1.875h-.375a3.75 3.75 0 0 0-3.75 3.75v1.5" />
+    </svg>
+);
+
+const ThermometerIcon: React.FC<{ className?: string }> = ({ className }) => (
+    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className={className}>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M13.5 6.25a.75.75 0 1 1-1.5 0 .75.75 0 0 1 1.5 0ZM13.5 9.25a.75.75 0 1 1-1.5 0 .75.75 0 0 1 1.5 0ZM13.5 12.25a.75.75 0 1 1-1.5 0 .75.75 0 0 1 1.5 0ZM13.5 15.25a.75.75 0 1 1-1.5 0 .75.75 0 0 1 1.5 0Z" />
+        <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75h6v6h-6v-6Z" />
+        <path strokeLinecap="round" strokeLinejoin="round" d="M12 21a6 6 0 0 0 6-6V9a6 6 0 1 0-12 0v6a6 6 0 0 0 6 6Z" />
+    </svg>
+);
+
+const CircleStackIcon: React.FC<{ className?: string }> = ({ className }) => (
+    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className={className}>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18ZM12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z" />
+        <path strokeLinecap="round" strokeLinejoin="round" d="M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" />
+    </svg>
+);
+
+
 
 // --- Main App Component ---
 
-type AppMode = 'home' | 'upload' | 'historical' | 'viewing' | 'sharing' | 'saved' | 'webCapture';
+type AppMode = 'home' | 'upload' | 'historical' | 'viewing' | 'sharing' | 'saved' | 'webCapture' | 'motion';
 const DEFAULT_MAP_URL = 'https://zoom.earth/maps/satellite/#view=7.389094,124.063201,9z/overlays=radar';
 
 function App() {
     const [mode, setMode] = useState<AppMode>('home');
     const [imageFile, setImageFile] = useState<ImageFile | null>(null);
+    const [imageFile1, setImageFile1] = useState<ImageFile | null>(null); // For motion analysis
+    const [imageFile2, setImageFile2] = useState<ImageFile | null>(null); // For motion analysis
     const [isLoading, setIsLoading] = useState(false);
     const [isSharingLoading, setIsSharingLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
@@ -125,6 +156,8 @@ function App() {
     const [iframeLoadError, setIframeLoadError] = useState<string | null>(null);
     
     const fileInputRef = useRef<HTMLInputElement>(null);
+    const fileInput1Ref = useRef<HTMLInputElement>(null);
+    const fileInput2Ref = useRef<HTMLInputElement>(null);
     const iframeLoadTimeoutRef = useRef<number | null>(null);
     const iframeRef = useRef<HTMLIFrameElement>(null);
 
@@ -132,15 +165,57 @@ function App() {
     // --- Data Persistence ---
     const saveAnalysis = useCallback((analysis: SavedAnalysis) => {
         setSavedAnalyses(prev => {
-            const updated = [analysis, ...prev.filter(a => a.id !== analysis.id)];
-            try {
-                localStorage.setItem('savedAnalyses', JSON.stringify(updated));
-            } catch (e) {
-                console.error("Failed to save to localStorage:", e);
+            // Prepend the new analysis to the list
+            let updatedAnalyses = [analysis, ...prev.filter(a => a.id !== analysis.id)];
+
+            const attemptToSave = (analysesToSave: SavedAnalysis[]): boolean => {
+                try {
+                    localStorage.setItem('savedAnalyses', JSON.stringify(analysesToSave));
+                    return true;
+                } catch (e) {
+                    // Check for QuotaExceededError across browsers
+                    if (e instanceof DOMException && (e.name === 'QuotaExceededError' || e.code === 22 || e.code === 1014 || e.name === 'NS_ERROR_DOM_QUOTA_REACHED')) {
+                        return false;
+                    }
+                    console.error("An unexpected error occurred while saving to localStorage:", e);
+                    setError("Could not save the analysis due to an unexpected storage error.");
+                    return true; // Stop trying on unexpected errors
+                }
+            };
+
+            // First attempt to save the full list
+            if (attemptToSave(updatedAnalyses)) {
+                if (error?.startsWith("Storage is full")) setError(null); // Clear any previous storage warnings
+                return updatedAnalyses;
             }
-            return updated;
+
+            // If it fails, start evicting old analyses
+            console.warn("LocalStorage quota exceeded. Evicting oldest analyses.");
+            const warningMessage = "Storage is full. Removing oldest analysis to make space...";
+            setError(warningMessage);
+
+            // Make a mutable copy to pop from
+            const analysesForEviction = [...updatedAnalyses];
+            
+            // Loop until we can save or we only have the new item left
+            while (analysesForEviction.length > 1) {
+                analysesForEviction.pop(); // Remove the oldest item
+                if (attemptToSave(analysesForEviction)) {
+                    // Success! Update the state.
+                    setTimeout(() => {
+                        // Clear the warning only if it hasn't been replaced by another error
+                        setError(currentError => currentError === warningMessage ? null : currentError);
+                    }, 3000);
+                    return analysesForEviction;
+                }
+            }
+
+            // If we're here, we couldn't even save the single new analysis
+            setError("Could not save analysis. The image data is too large for browser storage.");
+            // We failed to save the new one, so revert to the previous state.
+            return prev;
         });
-    }, []);
+    }, [error]);
 
     useEffect(() => {
         try {
@@ -176,7 +251,7 @@ function App() {
     // --- Event Handlers ---
 
     const handleBack = () => {
-        if (mode === 'upload' || mode === 'historical' || mode === 'saved' || mode === 'webCapture') {
+        if (mode === 'upload' || mode === 'historical' || mode === 'saved' || mode === 'webCapture' || mode === 'motion') {
             setMode('home');
         } else if (mode === 'viewing' || mode === 'sharing') {
             // Determine where to go back to
@@ -189,7 +264,11 @@ function App() {
         setAnalysisResult(null);
     };
 
-    const onImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const handleImageFileChange = (
+        e: React.ChangeEvent<HTMLInputElement>,
+        setImage: React.Dispatch<React.SetStateAction<ImageFile | null>>,
+        inputRef: React.RefObject<HTMLInputElement>
+    ) => {
         if (e.target.files && e.target.files[0]) {
             const file = e.target.files[0];
             const supportedTypes = ['image/png', 'image/jpeg', 'image/webp', 'image/gif'];
@@ -198,10 +277,10 @@ function App() {
 
             const resetAndError = (message: string) => {
                 setError(message);
-                setImageFile(null);
+                setImage(null);
                 setLastFailedAction(null);
-                if (fileInputRef.current) {
-                    fileInputRef.current.value = '';
+                if (inputRef.current) {
+                    inputRef.current.value = '';
                 }
             };
 
@@ -219,7 +298,7 @@ function App() {
             reader.onload = (event) => {
                 if (event.target?.result) {
                     const base64 = (event.target.result as string).split(',')[1];
-                    setImageFile({ file: file, base64, mimeType: file.type });
+                    setImage({ file: file, base64, mimeType: file.type });
                     setError(null);
                     setLastFailedAction(null);
                 }
@@ -385,6 +464,48 @@ function App() {
         analysisFn();
     }, [saveAnalysis]);
 
+    const handleMotionSubmit = useCallback(async (e: React.FormEvent<HTMLFormElement>) => {
+        e.preventDefault();
+        if (!imageFile1 || !imageFile2) {
+            setError("Please select both a start and an end image.");
+            setLastFailedAction(null);
+            return;
+        }
+
+        const analysisFn = async () => {
+            setIsLoading(true);
+            setError(null);
+            setAnalysisResult(null);
+            setLastFailedAction(null);
+
+            try {
+                const result = await analyzeWeatherMotion(
+                    imageFile1.mimeType, imageFile1.base64,
+                    imageFile2.mimeType, imageFile2.base64
+                );
+                setAnalysisResult(result);
+                const newAnalysis: SavedAnalysis = {
+                    id: Date.now().toString(),
+                    date: new Date().toISOString().split('T')[0],
+                    originalImage: { base64: imageFile2.base64, mimeType: imageFile2.mimeType },
+                    ...result,
+                };
+                saveAnalysis(newAnalysis);
+                setActiveAnalysis(newAnalysis);
+                setMode('viewing');
+            } catch (err) {
+                const errorMessage = err instanceof Error ? err.message : "An unknown error occurred.";
+                setError(errorMessage);
+                setLastFailedAction(() => analysisFn);
+                console.error("Motion analysis failed:", err);
+            } finally {
+                setIsLoading(false);
+            }
+        };
+
+        analysisFn();
+    }, [imageFile1, imageFile2, saveAnalysis]);
+
 
     const handleShare = async () => {
         if (!activeAnalysis || isSharingLoading) return;
@@ -527,6 +648,9 @@ function App() {
                 <button onClick={() => setMode('upload')} className="w-full sm:w-auto flex items-center justify-center px-8 py-3 border border-transparent text-base font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700 transition-all duration-200 transform hover:scale-105">
                     <UploadIcon /> <span className="ml-3">Upload Image</span>
                 </button>
+                 <button onClick={() => setMode('motion')} className="w-full sm:w-auto flex items-center justify-center px-8 py-3 border border-transparent text-base font-medium rounded-md text-white bg-orange-600 hover:bg-orange-700 transition-all duration-200 transform hover:scale-105">
+                    <FilmIcon className="w-5 h-5" /> <span className="ml-3">Analyze Motion</span>
+                </button>
                 <button onClick={() => setMode('historical')} className="w-full sm:w-auto flex items-center justify-center px-8 py-3 border border-transparent text-base font-medium rounded-md text-white bg-teal-600 hover:bg-teal-700 transition-all duration-200 transform hover:scale-105">
                     <CalendarDaysIcon className="w-5 h-5" /> <span className="ml-3">Historical Data</span>
                 </button>
@@ -551,7 +675,7 @@ function App() {
                             <div className="mt-4 flex text-sm leading-6 text-gray-400">
                                 <label htmlFor="file-upload" className="relative cursor-pointer rounded-md font-semibold text-indigo-400 focus-within:outline-none focus-within:ring-2 focus-within:ring-indigo-500 focus-within:ring-offset-2 focus-within:ring-offset-gray-900 hover:text-indigo-300">
                                     <span>Upload a file</span>
-                                    <input id="file-upload" name="file-upload" type="file" className="sr-only" onChange={onImageChange} accept="image/png, image/jpeg, image/webp, image/gif" ref={fileInputRef} />
+                                    <input id="file-upload" name="file-upload" type="file" className="sr-only" onChange={(e) => handleImageFileChange(e, setImageFile, fileInputRef)} accept="image/png, image/jpeg, image/webp, image/gif" ref={fileInputRef} />
                                 </label>
                                 <p className="pl-1">or drag and drop</p>
                             </div>
@@ -665,6 +789,82 @@ function App() {
             </div>
         </div>
     );
+
+    const renderMotionAnalysis = () => {
+        const ImageUploader = ({ imageFile, onImageChange, title, id, inputRef }: { imageFile: ImageFile | null, onImageChange: (e: React.ChangeEvent<HTMLInputElement>) => void, title: string, id: string, inputRef: React.RefObject<HTMLInputElement> }) => (
+            <div className="flex-1">
+                <h3 className="text-lg font-medium text-center text-gray-300">{title}</h3>
+                <div className="mt-2 flex justify-center rounded-lg border-2 border-dashed border-gray-600 px-6 py-10 hover:border-gray-500 transition-colors">
+                    <div className="text-center">
+                        <UploadIcon />
+                        <div className="mt-4 flex text-sm leading-6 text-gray-400">
+                            <label htmlFor={id} className="relative cursor-pointer rounded-md font-semibold text-orange-400 focus-within:outline-none focus-within:ring-2 focus-within:ring-orange-500 focus-within:ring-offset-2 focus-within:ring-offset-gray-900 hover:text-orange-300">
+                                <span>Upload a file</span>
+                                <input id={id} name={id} type="file" className="sr-only" onChange={onImageChange} accept="image/png, image/jpeg, image/webp, image/gif" ref={inputRef} />
+                            </label>
+                            <p className="pl-1">or drag and drop</p>
+                        </div>
+                        <p className="text-xs leading-5 text-gray-500">PNG, JPG, GIF, WEBP up to 10MB</p>
+                    </div>
+                </div>
+                {imageFile && (
+                    <div className="mt-4 text-center">
+                        <img src={`data:${imageFile.mimeType};base64,${imageFile.base64}`} alt="Preview" className="mx-auto max-h-32 rounded-lg shadow-lg" />
+                        <p className="mt-2 text-sm text-gray-400 truncate">{imageFile.file.name}</p>
+                    </div>
+                )}
+            </div>
+        );
+
+        return (
+            <div className="flex flex-col h-full">
+                {renderHeader("Analyze Weather Motion", true)}
+                <div className="flex-grow p-4 md:p-8 flex flex-col items-center justify-center">
+                    <form onSubmit={handleMotionSubmit} className="w-full max-w-4xl">
+                        <div className="flex flex-col md:flex-row gap-8">
+                            <ImageUploader imageFile={imageFile1} onImageChange={(e) => handleImageFileChange(e, setImageFile1, fileInput1Ref)} title="Start Image (Time 1)" id="file-upload-1" inputRef={fileInput1Ref} />
+                            <ImageUploader imageFile={imageFile2} onImageChange={(e) => handleImageFileChange(e, setImageFile2, fileInput2Ref)} title="End Image (Time 2)" id="file-upload-2" inputRef={fileInput2Ref} />
+                        </div>
+
+                         {error && (
+                        <div className="mt-4 bg-red-900/50 border border-red-700/50 text-red-300 px-4 py-3 rounded-lg relative animate-fade-in flex items-center justify-between" role="alert">
+                            <div>
+                                <strong className="font-bold">Error:</strong>
+                                <span className="block sm:inline ml-2">{error}</span>
+                            </div>
+                            <div className="flex items-center space-x-2">
+                                {lastFailedAction && (
+                                    <button
+                                        type="button"
+                                        onClick={lastFailedAction}
+                                        className="inline-flex items-center px-3 py-1.5 border border-transparent text-sm font-medium rounded-md text-white bg-yellow-600 hover:bg-yellow-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-gray-900 focus:ring-yellow-500 transition-all duration-200"
+                                    >
+                                        Retry
+                                    </button>
+                                )}
+                                <button type="button" onClick={() => { setError(null); setLastFailedAction(null); }} className="p-1 rounded-full hover:bg-red-800/50" aria-label="Close">
+                                    <XMarkIcon className="w-5 h-5" />
+                                </button>
+                            </div>
+                        </div>
+                    )}
+
+                        <button type="submit" disabled={!imageFile1 || !imageFile2 || isLoading} className="mt-8 w-full flex justify-center items-center px-4 py-3 border border-transparent text-base font-medium rounded-md text-white bg-orange-600 hover:bg-orange-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-gray-900 focus:ring-orange-500 disabled:bg-gray-600 disabled:cursor-not-allowed transition-all duration-200">
+                            {isLoading ? (
+                                <>
+                                    <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                    </svg>
+                                    Analyzing Motion...
+                                </>
+                            ) : "Analyze Motion"}
+                        </button>
+                    </form>
+                </div>
+            </div>
+        );
+    };
     
     const renderWebCapture = () => {
         return (
@@ -789,6 +989,9 @@ function App() {
         const [showSummaryInToggle, setShowSummaryInToggle] = useState(true);
         const [isOriginalLoaded, setOriginalLoaded] = useState(false);
         const [isSummaryLoaded, setSummaryLoaded] = useState(false);
+        const [showWind, setShowWind] = useState(false);
+        const [showTemp, setShowTemp] = useState(false);
+        const [showPressure, setShowPressure] = useState(false);
         const showLoader = !isOriginalLoaded || !isSummaryLoaded;
 
         const ImageLoadingSpinner = () => (
@@ -800,25 +1003,87 @@ function App() {
             </div>
         );
 
+        const DataOverlay = () => (
+            <div className="absolute inset-0 pointer-events-none z-10">
+                <svg width="100%" height="100%" viewBox="0 0 100 100" preserveAspectRatio="none">
+                    {/* Wind Vectors */}
+                    {showWind && (
+                        <>
+                            <defs>
+                                <marker id="arrowhead" markerWidth="5" markerHeight="3.5" refX="0" refY="1.75" orient="auto">
+                                    <polygon points="0 0, 5 1.75, 0 3.5" fill="#00ffff" />
+                                </marker>
+                            </defs>
+                            <path d="M 20,30 Q 35,20 50,30" stroke="#00ffff" strokeWidth="0.8" fill="none" markerEnd="url(#arrowhead)" />
+                            <path d="M 25,70 Q 40,80 55,70" stroke="#00ffff" strokeWidth="0.8" fill="none" markerEnd="url(#arrowhead)" />
+                            <path d="M 70,20 Q 80,40 70,60" stroke="#00ffff" strokeWidth="0.8" fill="none" markerEnd="url(#arrowhead)" />
+                        </>
+                    )}
+                    {/* Temperature Readings */}
+                    {showTemp && (
+                        <>
+                            <text x="30" y="45" fontSize="3" fill="#ff4500" className="font-bold drop-shadow-md">28°C</text>
+                            <text x="60" y="65" fontSize="3" fill="#add8e6" className="font-bold drop-shadow-md">15°C</text>
+                             <text x="50" y="20" fontSize="3" fill="#ff8c00" className="font-bold drop-shadow-md">25°C</text>
+                        </>
+                    )}
+                    {/* Pressure Isobars */}
+                    {showPressure && (
+                        <>
+                            <path d="M 10,10 C 40,50 60,0 90,40" stroke="white" strokeWidth="0.5" strokeDasharray="2,1" fill="none" />
+                            <text x="12" y="10" fontSize="2" fill="white" className="drop-shadow-sm">1012mb</text>
+                             <path d="M 15,20 C 45,60 65,10 95,50" stroke="white" strokeWidth="0.5" strokeDasharray="2,1" fill="none" />
+                            <text x="17" y="20" fontSize="2" fill="white" className="drop-shadow-sm">1008mb</text>
+                        </>
+                    )}
+                </svg>
+            </div>
+        );
+
+        const OverlayControls = () => {
+             const buttonClass = (isActive: boolean) => `p-2 rounded-full transition-colors ${isActive ? 'bg-blue-600 text-white' : 'bg-gray-900/70 text-gray-300 hover:bg-gray-700'}`;
+            return (
+                <div className="absolute top-4 right-4 z-20 flex flex-col space-y-2">
+                     <button onClick={() => setShowWind(!showWind)} className={buttonClass(showWind)} title="Toggle Wind Speed">
+                        <WindIcon className="w-5 h-5" />
+                    </button>
+                    <button onClick={() => setShowTemp(!showTemp)} className={buttonClass(showTemp)} title="Toggle Temperature">
+                        <ThermometerIcon className="w-5 h-5" />
+                    </button>
+                    <button onClick={() => setShowPressure(!showPressure)} className={buttonClass(showPressure)} title="Toggle Pressure">
+                        <CircleStackIcon className="w-5 h-5" />
+                    </button>
+                </div>
+            );
+        };
+
         return (
             <div className="relative w-full aspect-square border border-gray-700 rounded-lg overflow-hidden bg-black">
                 {showLoader && <ImageLoadingSpinner />}
+                <OverlayControls />
                 
                 {viewMode === 'toggle' ? (
-                    <>
+                    <div className="absolute inset-0 w-full h-full">
                         <img
                             src={`data:${original.mimeType};base64,${original.base64}`}
                             alt="Original satellite"
                             className={`absolute inset-0 w-full h-full object-contain transition-opacity duration-500 ${showSummaryInToggle ? 'opacity-0' : 'opacity-100'}`}
                             onLoad={() => setOriginalLoaded(true)}
                         />
+                         <div className={`absolute inset-0 w-full h-full transition-opacity duration-500 ${showSummaryInToggle ? 'opacity-0' : 'opacity-100'}`}>
+                           <DataOverlay />
+                        </div>
+
                         <img
                             src={`data:${summary.mimeType};base64,${summary.base64}`}
                             alt="AI visual summary"
                             className={`absolute inset-0 w-full h-full object-contain transition-opacity duration-500 ${showSummaryInToggle ? 'opacity-100' : 'opacity-0'}`}
                             onLoad={() => setSummaryLoaded(true)}
                         />
-                    </>
+                         <div className={`absolute inset-0 w-full h-full transition-opacity duration-500 ${showSummaryInToggle ? 'opacity-100' : 'opacity-0'}`}>
+                           <DataOverlay />
+                        </div>
+                    </div>
                 ) : (
                     <div className="absolute inset-0 flex h-full w-full">
                         <div className="relative w-1/2 h-full border-r border-gray-600/50">
@@ -828,6 +1093,7 @@ function App() {
                                 className="w-full h-full object-contain"
                                 onLoad={() => setOriginalLoaded(true)}
                             />
+                            <DataOverlay />
                             <div className="absolute bottom-2 left-2 bg-black/60 text-white text-xs px-2 py-1 rounded-md backdrop-blur-sm">Original</div>
                         </div>
                         <div className="relative w-1/2 h-full">
@@ -837,6 +1103,7 @@ function App() {
                                 className="w-full h-full object-contain"
                                 onLoad={() => setSummaryLoaded(true)}
                             />
+                            <DataOverlay />
                             <div className="absolute bottom-2 right-2 bg-black/60 text-white text-xs px-2 py-1 rounded-md backdrop-blur-sm">AI Summary</div>
                         </div>
                     </div>
@@ -937,8 +1204,20 @@ function App() {
                              <span className="inline-flex items-center px-3 rounded-l-md text-gray-400 sm:text-sm">
                                 <LinkIcon className="w-5 h-5" />
                              </span>
-                            <input type="text" readOnly value={shareUrl} className="flex-1 block w-full min-w-0 rounded-none bg-transparent sm:text-sm text-gray-200 border-0 focus:ring-0" />
-                            <button onClick={copyToClipboard} className="relative inline-flex items-center gap-x-1.5 rounded-r-md px-3 py-2 text-sm font-semibold bg-gray-700 hover:bg-gray-600">
+                            <input
+                                type="text"
+                                readOnly
+                                value={shareUrl}
+                                onFocus={(e) => e.target.select()}
+                                className="flex-1 block w-full min-w-0 rounded-none bg-transparent sm:text-sm text-gray-200 border-0 focus:ring-0"
+                                aria-label="Shareable link"
+                            />
+                            <button
+                                onClick={copyToClipboard}
+                                className="relative inline-flex items-center gap-x-1.5 rounded-r-md px-3 py-2 text-sm font-semibold bg-gray-700 hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-gray-900 focus:ring-green-500"
+                                title={showCopied ? 'Copied!' : 'Copy to clipboard'}
+                                aria-label={showCopied ? 'Link copied' : 'Copy link to clipboard'}
+                            >
                                 {showCopied ? <CheckIcon className="w-5 h-5 text-green-400" /> : <ClipboardIcon className="w-5 h-5" />}
                             </button>
                         </div>
@@ -1020,6 +1299,7 @@ function App() {
         switch (mode) {
             case 'home': return renderHome();
             case 'upload': return renderUpload();
+            case 'motion': return renderMotionAnalysis();
             case 'historical': return renderHistorical();
             case 'webCapture': return renderWebCapture();
             case 'viewing': return renderViewing();

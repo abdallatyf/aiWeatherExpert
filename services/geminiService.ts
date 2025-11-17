@@ -120,3 +120,76 @@ export async function explainWeatherFromImage(mimeType: string, imageData: strin
         throw new Error(userMessage);
     }
 }
+
+/**
+ * Generates a weather motion analysis by comparing two sequential satellite images.
+ * @param mimeType1 MIME type of the first image.
+ * @param imageData1 Base64 data of the first image.
+ * @param mimeType2 MIME type of the second image.
+ * @param imageData2 Base64 data of the second image.
+ * @returns A promise that resolves to an AnalysisResult.
+ */
+export async function analyzeWeatherMotion(
+    mimeType1: string,
+    imageData1: string,
+    mimeType2: string,
+    imageData2: string
+): Promise<AnalysisResult> {
+     try {
+        const ai = getGeminiClient();
+        
+        const imagePart1 = { inlineData: { mimeType: mimeType1, data: imageData1 } };
+        const imagePart2 = { inlineData: { mimeType: mimeType2, data: imageData2 } };
+
+        // --- Step 1: Get Textual Motion Analysis ---
+        const textAnalysisPrompt = `You are an expert meteorologist. Analyze the motion and changes between these two satellite images, which are sequential in time (Image 1 is the start, Image 2 is the end). Provide a detailed analysis covering:
+1.  **Movement:** Describe the direction and estimated speed of the primary weather system (e.g., hurricane, storm front).
+2.  **Intensity Change:** Has the system intensified or weakened? Look for changes in cloud top temperature, structure, and rotation.
+3.  **Structural Change:** Describe any changes in the storm's size, shape, or features like the eye-wall or rain bands.
+4.  **Forecast:** Based on the observed motion and changes, provide a short-term forecast of its likely path and intensity development.`;
+        
+        const textResponsePromise = ai.models.generateContent({
+            model: 'gemini-2.5-flash',
+            contents: { parts: [imagePart1, imagePart2, { text: textAnalysisPrompt }] },
+        });
+
+        // --- Step 2: Get Visual Motion Summary ---
+        const visualSummaryPrompt = `You are an expert meteorologist. Generate a new image that visually summarizes the motion between the two provided satellite images. This new image must be the same size as the originals. On the SECOND image, draw meteorological symbols and annotations to illustrate the changes:
+*   Use bold arrows to show the primary direction of movement of the storm's center or key features.
+*   Draw a projected path line extending from the storm's current position.
+*   Use color-coding or symbols to highlight areas of significant intensification (e.g., red circles) or weakening (e.g., blue circles).
+*   Outline the storm's position from the FIRST image as a faint, dashed line on top of the second image to clearly show the displacement.`;
+
+        const visualResponsePromise = ai.models.generateContent({
+            model: 'gemini-2.5-flash-image',
+            contents: { parts: [imagePart1, imagePart2, { text: visualSummaryPrompt }] },
+            config: {
+                responseModalities: [Modality.IMAGE],
+            },
+        });
+
+        // --- Await both promises concurrently ---
+        const [textResponse, visualResponse] = await Promise.all([textResponsePromise, visualResponsePromise]);
+        
+        const explanation = textResponse?.text;
+        if (!explanation) {
+            throw new Error("The AI did not return a textual motion analysis.");
+        }
+
+        const visualPart = visualResponse?.candidates?.[0]?.content?.parts?.find(p => p.inlineData);
+        if (!visualPart?.inlineData?.data || !visualPart?.inlineData?.mimeType) {
+            throw new Error("The AI did not return a complete visual motion summary.");
+        }
+
+        return {
+            explanation,
+            visualSummary: visualPart.inlineData.data,
+            visualSummaryMimeType: visualPart.inlineData.mimeType,
+        };
+
+    } catch (error) {
+        console.error("Error analyzing weather motion from Gemini:", error);
+        const userMessage = error instanceof Error ? error.message : "An unknown error occurred during motion analysis.";
+        throw new Error(userMessage);
+    }
+}
