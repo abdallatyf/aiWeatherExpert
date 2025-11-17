@@ -79,10 +79,29 @@ const BookmarkIcon: React.FC<{ className?: string }> = ({ className }) => (
     </svg>
 );
 
+const ArrowUturnLeftIcon: React.FC<{ className?: string }> = ({ className }) => (
+    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className={className}>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M9 15 3 9m0 0 6-6M3 9h12a6 6 0 0 1 0 12h-3" />
+    </svg>
+);
+
+const ArrowUturnRightIcon: React.FC<{ className?: string }> = ({ className }) => (
+    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className={className}>
+        <path strokeLinecap="round" strokeLinejoin="round" d="m15 15 6-6m0 0-6-6m6 6H9a6 6 0 0 0 0 12h3" />
+    </svg>
+);
+
+const ArrowPathIcon: React.FC<{ className?: string }> = ({ className }) => (
+    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className={className}>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0 3.181 3.183a8.25 8.25 0 0 0 11.667 0l3.181-3.183m-4.991-2.691v4.992h-4.992m0 0-3.181-3.183a8.25 8.25 0 0 1 11.667 0l3.181 3.183" />
+    </svg>
+);
+
 
 // --- Main App Component ---
 
 type AppMode = 'home' | 'upload' | 'historical' | 'viewing' | 'sharing' | 'saved' | 'webCapture';
+const DEFAULT_MAP_URL = 'https://zoom.earth/maps/satellite/#view=7.389094,124.063201,9z/overlays=radar';
 
 function App() {
     const [mode, setMode] = useState<AppMode>('home');
@@ -100,9 +119,15 @@ function App() {
     const [isMapInteracted, setIsMapInteracted] = useState(false);
     const [lastFailedAction, setLastFailedAction] = useState<(() => Promise<void>) | null>(null);
     const [showPermissionModal, setShowPermissionModal] = useState(false);
-    const liveMapUrl = 'https://zoom.earth/maps/satellite/#view=7.389094,124.063201,9z/overlays=radar';
-
+    const [liveMapUrlInput, setLiveMapUrlInput] = useState<string>(DEFAULT_MAP_URL);
+    const [currentIframeUrl, setCurrentIframeUrl] = useState<string>(DEFAULT_MAP_URL);
+    const [isIframeLoading, setIsIframeLoading] = useState(false);
+    const [iframeLoadError, setIframeLoadError] = useState<string | null>(null);
+    
     const fileInputRef = useRef<HTMLInputElement>(null);
+    const iframeLoadTimeoutRef = useRef<number | null>(null);
+    const iframeRef = useRef<HTMLIFrameElement>(null);
+
 
     // --- Data Persistence ---
     const saveAnalysis = useCallback((analysis: SavedAnalysis) => {
@@ -393,6 +418,59 @@ function App() {
             setIsSharingLoading(false);
         }
     };
+
+    const handleLoadUrl = () => {
+        try {
+            if (!liveMapUrlInput.startsWith('https://') && !liveMapUrlInput.startsWith('http://')) {
+                throw new Error("URL must start with http:// or https://");
+            }
+            new URL(liveMapUrlInput);
+            
+            setError(null);
+            setIframeLoadError(null);
+            setIsIframeLoading(true);
+            setCurrentIframeUrl(liveMapUrlInput);
+
+            // Clear any previous timeout
+            if (iframeLoadTimeoutRef.current) {
+                clearTimeout(iframeLoadTimeoutRef.current);
+            }
+
+            // Set a timeout to handle cases where the iframe fails to load (e.g., X-Frame-Options)
+            iframeLoadTimeoutRef.current = window.setTimeout(() => {
+                setIsIframeLoading(false);
+                setIframeLoadError("This site's security policy prevents it from being embedded. Try another URL.");
+            }, 8000); // 8-second timeout
+
+        } catch (err) {
+            setError("Please enter a valid, complete URL.");
+            console.error("Invalid URL provided:", err);
+        }
+    };
+
+    const handleIframeLoad = () => {
+        // The iframe has successfully loaded, so clear the timeout.
+        if (iframeLoadTimeoutRef.current) {
+            clearTimeout(iframeLoadTimeoutRef.current);
+            iframeLoadTimeoutRef.current = null;
+        }
+        setIsIframeLoading(false);
+        setIframeLoadError(null);
+    };
+
+    const handleIframeBack = () => {
+        iframeRef.current?.contentWindow?.history.back();
+    };
+    const handleIframeForward = () => {
+        iframeRef.current?.contentWindow?.history.forward();
+    };
+    const handleIframeRefresh = () => {
+        if (iframeRef.current) {
+            // Re-assigning src is a reliable way to trigger a reload
+            iframeRef.current.src = currentIframeUrl;
+            setIsIframeLoading(true); // Show loader on refresh
+        }
+    };
     
     useEffect(() => {
         if (mode === 'historical' && !selectedDate) {
@@ -594,19 +672,75 @@ function App() {
                 {renderHeader("Analyze Live Map", true)}
                 <div className="flex-grow p-4 md:p-8 flex flex-col items-center">
                     <div className="w-full h-full max-w-7xl flex flex-col">
-                        <p className="text-center text-gray-400 mb-4">
-                            Interact with the map to find a weather pattern. The analyze button will be enabled once you move your mouse over the map.
+                        
+                        <div className="mb-4 flex flex-col space-y-2">
+                            {/* --- Mini-Browser Toolbar --- */}
+                            <div className="flex items-center space-x-2 bg-gray-800 p-2 rounded-t-lg border-b border-gray-700">
+                                <button onClick={handleIframeBack} title="Back" className="p-2 rounded-full hover:bg-gray-700 transition-colors text-gray-400 hover:text-white disabled:opacity-50 disabled:cursor-not-allowed" aria-label="Go back in map history">
+                                    <ArrowUturnLeftIcon className="w-5 h-5" />
+                                </button>
+                                <button onClick={handleIframeForward} title="Forward" className="p-2 rounded-full hover:bg-gray-700 transition-colors text-gray-400 hover:text-white disabled:opacity-50 disabled:cursor-not-allowed" aria-label="Go forward in map history">
+                                    <ArrowUturnRightIcon className="w-5 h-5" />
+                                </button>
+                                <button onClick={handleIframeRefresh} title="Refresh" className="p-2 rounded-full hover:bg-gray-700 transition-colors text-gray-400 hover:text-white" aria-label="Refresh map">
+                                    <ArrowPathIcon className="w-5 h-5" />
+                                </button>
+                                <div className="relative flex-grow">
+                                    <input
+                                        type="url"
+                                        value={liveMapUrlInput}
+                                        onChange={(e) => setLiveMapUrlInput(e.target.value)}
+                                        onKeyDown={(e) => e.key === 'Enter' && handleLoadUrl()}
+                                        placeholder="https://example.com/map"
+                                        className="w-full bg-gray-900 border-gray-600 text-white rounded-md p-2 focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
+                                        aria-label="Live Map URL"
+                                    />
+                                </div>
+                                <button 
+                                    onClick={handleLoadUrl}
+                                    disabled={isIframeLoading}
+                                    className="px-5 py-2 rounded-md text-white bg-gray-700 hover:bg-gray-600 transition-colors text-sm font-medium focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-gray-900 focus:ring-gray-500 disabled:bg-gray-600 disabled:cursor-not-allowed"
+                                >
+                                    {isIframeLoading ? 'Loading...' : 'Load'}
+                                </button>
+                            </div>
+                            
+                            {/* --- Explanatory Text --- */}
+                            <div className="px-2">
+                                <p className="text-xs text-gray-500">
+                                    Note: The address bar won't update as you navigate inside the map. Some sites may not load due to security policies.
+                                </p>
+                                { iframeLoadError && <p className="mt-1 text-xs text-yellow-400">{iframeLoadError}</p> }
+                            </div>
+                        </div>
+
+                         <p className="text-center text-gray-400 mb-4">
+                            Interact with the map below, then click Analyze to capture the view.
                         </p>
-                        <div className="flex-grow w-full border border-gray-700 rounded-lg overflow-hidden bg-black">
+
+                        <div className="relative flex-grow w-full border border-gray-700 rounded-lg overflow-hidden bg-black">
+                            {isIframeLoading && (
+                                <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/70 z-10">
+                                    <svg className="animate-spin h-8 w-8 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                    </svg>
+                                    <p className="mt-4 text-lg">Loading Map...</p>
+                                </div>
+                            )}
                             <iframe
-                                src={liveMapUrl}
+                                ref={iframeRef}
+                                key={currentIframeUrl}
+                                src={currentIframeUrl}
                                 className="w-full h-full"
                                 title="Live Weather Map"
                                 allow="geolocation; fullscreen"
+                                sandbox="allow-scripts allow-same-origin allow-popups allow-forms"
                                 onMouseEnter={() => setIsMapInteracted(true)}
+                                onLoad={handleIframeLoad}
                             ></iframe>
                         </div>
-                         {error && (
+                         {error && !error.toLowerCase().includes('url') && (
                             <div className="mt-4 bg-red-900/50 border border-red-700/50 text-red-300 px-4 py-3 rounded-lg relative animate-fade-in flex items-center justify-between" role="alert">
                                 <div>
                                     <strong className="font-bold">Error:</strong>
@@ -630,7 +764,7 @@ function App() {
                         )}
                         <button
                             onClick={handleCaptureAndAnalyze}
-                            disabled={isLoading || !isMapInteracted}
+                            disabled={isLoading || !isMapInteracted || isIframeLoading}
                             title={!isMapInteracted ? "Move your mouse over the map to enable" : "Capture the current map view for analysis"}
                             className="mt-6 w-full flex justify-center items-center px-4 py-3 border border-transparent text-base font-medium rounded-md text-white bg-purple-600 hover:bg-purple-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-gray-900 focus:ring-purple-500 disabled:bg-gray-600 disabled:cursor-not-allowed transition-all duration-200"
                         >
