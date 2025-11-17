@@ -4,3 +4,9 @@ export interface ImageFile {
   base64: string;
   mimeType: string;
 }
+
+export interface AnalysisResult {
+  explanation: string;
+  visualSummary: string; // Base64 encoded image
+  visualSummaryMimeType: string;
+}
