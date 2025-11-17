@@ -1014,17 +1014,66 @@ function App() {
                                     <polygon points="0 0, 5 1.75, 0 3.5" fill="#00ffff" />
                                 </marker>
                             </defs>
-                            <path d="M 20,30 Q 35,20 50,30" stroke="#00ffff" strokeWidth="0.8" fill="none" markerEnd="url(#arrowhead)" />
-                            <path d="M 25,70 Q 40,80 55,70" stroke="#00ffff" strokeWidth="0.8" fill="none" markerEnd="url(#arrowhead)" />
-                            <path d="M 70,20 Q 80,40 70,60" stroke="#00ffff" strokeWidth="0.8" fill="none" markerEnd="url(#arrowhead)" />
+                            {/* Enhanced wind vectors with a cyclonic pattern and more annotations */}
+                            {/* Outer bands */}
+                            <path d="M 10,30 C 20,10 40,10 50,20" stroke="#00ffff" strokeOpacity="0.8" strokeWidth="0.7" fill="none" markerEnd="url(#arrowhead)" />
+                            <text x="52" y="19" fontSize="2.5" fill="#00ffff" className="font-sans font-semibold" style={{ textShadow: '0px 0px 3px black' }}>25mph</text>
+
+                            <path d="M 20,80 C 10,70 10,50 20,40" stroke="#00ffff" strokeOpacity="0.8" strokeWidth="0.7" fill="none" markerEnd="url(#arrowhead)" />
+                            <text x="22" y="39" fontSize="2.5" fill="#00ffff" className="font-sans font-semibold" style={{ textShadow: '0px 0px 3px black' }}>30mph</text>
+                            
+                            <path d="M 80,80 C 70,90 50,90 40,80" stroke="#00ffff" strokeOpacity="0.8" strokeWidth="0.7" fill="none" markerEnd="url(#arrowhead)" />
+                            <text x="38" y="79" fontSize="2.5" fill="#00ffff" className="font-sans font-semibold" style={{ textShadow: '0px 0px 3px black' }}>28mph</text>
+
+                            <path d="M 80,30 C 90,40 90,60 80,70" stroke="#00ffff" strokeOpacity="0.8" strokeWidth="0.7" fill="none" markerEnd="url(#arrowhead)" />
+                            <text x="82" y="71" fontSize="2.5" fill="#00ffff" className="font-sans font-semibold" style={{ textShadow: '0px 0px 3px black' }}>35mph</text>
+
+                            {/* Inner bands, stronger winds */}
+                            <path d="M 30,55 C 30,45 40,40 50,45" stroke="#00ffff" strokeOpacity="0.9" strokeWidth="0.9" fill="none" markerEnd="url(#arrowhead)" />
+                            <text x="52" y="44" fontSize="2.5" fill="#00ffff" className="font-sans font-bold" style={{ textShadow: '0px 0px 3px black' }}>45mph</text>
+                            
+                            <path d="M 65,65 C 55,70 45,70 40,60" stroke="#00ffff" strokeOpacity="0.9" strokeWidth="0.9" fill="none" markerEnd="url(#arrowhead)" />
+                            <text x="38" y="59" fontSize="2.5" fill="#00ffff" className="font-sans font-bold" style={{ textShadow: '0px 0px 3px black' }}>50mph</text>
+                            
+                            <path d="M 50,30 C 60,35 65,45 60,55" stroke="#00ffff" strokeOpacity="0.9" strokeWidth="0.9" fill="none" markerEnd="url(#arrowhead)" />
+                            <text x="62" y="56" fontSize="2.5" fill="#00ffff" className="font-sans font-bold" style={{ textShadow: '0px 0px 3px black' }}>48mph</text>
+
+                            {/* Some straight-line winds on the periphery */}
+                            <path d="M 5,5 L 20,10" stroke="#00ffff" strokeOpacity="0.7" strokeWidth="0.6" fill="none" markerEnd="url(#arrowhead)" />
+                            <text x="22" y="10" fontSize="2.5" fill="#00ffff" className="font-sans font-semibold" style={{ textShadow: '0px 0px 3px black' }}>15mph</text>
+                            
+                            <path d="M 5,95 L 20,90" stroke="#00ffff" strokeOpacity="0.7" strokeWidth="0.6" fill="none" markerEnd="url(#arrowhead)" />
+                            <text x="22" y="90" fontSize="2.5" fill="#00ffff" className="font-sans font-semibold" style={{ textShadow: '0px 0px 3px black' }}>18mph</text>
+
+                            <path d="M 95,5 L 80,10" stroke="#00ffff" strokeOpacity="0.7" strokeWidth="0.6" fill="none" markerEnd="url(#arrowhead)" />
+                            <text x="78" y="10" fontSize="2.5" fill="#00ffff" className="font-sans font-semibold" style={{ textShadow: '0px 0px 3px black' }}>20mph</text>
+                            
+                            <path d="M 95,95 L 80,90" stroke="#00ffff" strokeOpacity="0.7" strokeWidth="0.6" fill="none" markerEnd="url(#arrowhead)" />
+                            <text x="78" y="90" fontSize="2.5" fill="#00ffff" className="font-sans font-semibold" style={{ textShadow: '0px 0px 3px black' }}>22mph</text>
                         </>
                     )}
-                    {/* Temperature Readings */}
+                    {/* Temperature Readings - Enhanced */}
                     {showTemp && (
                         <>
-                            <text x="30" y="45" fontSize="3" fill="#ff4500" className="font-bold drop-shadow-md">28°C</text>
-                            <text x="60" y="65" fontSize="3" fill="#add8e6" className="font-bold drop-shadow-md">15°C</text>
-                             <text x="50" y="20" fontSize="3" fill="#ff8c00" className="font-bold drop-shadow-md">25°C</text>
+                            {/* Hotter region (e.g., land) */}
+                            <circle cx="30" cy="45" r="5" fill="#ff4500" fillOpacity="0.3" />
+                            <text x="28" y="46" fontSize="3.5" fill="white" className="font-bold" style={{ textShadow: '0 0 5px black' }}>32°C</text>
+
+                            {/* Cooler region (e.g., over water/clouds) */}
+                            <circle cx="65" cy="68" r="6" fill="#1e90ff" fillOpacity="0.4" />
+                            <text x="63" y="69" fontSize="3.5" fill="white" className="font-bold" style={{ textShadow: '0 0 5px black' }}>14°C</text>
+                            
+                            {/* Warm region */}
+                            <circle cx="50" cy="20" r="4" fill="#ff8c00" fillOpacity="0.35" />
+                            <text x="48" y="21" fontSize="3.5" fill="white" className="font-bold" style={{ textShadow: '0 0 5px black' }}>26°C</text>
+
+                            {/* Another cool spot */}
+                            <circle cx="80" cy="30" r="5" fill="#87ceeb" fillOpacity="0.4" />
+                            <text x="78" y="31" fontSize="3.5" fill="white" className="font-bold" style={{ textShadow: '0 0 5px black' }}>19°C</text>
+                            
+                            {/* A very cold spot (high altitude clouds) */}
+                            <circle cx="45" cy="55" r="4" fill="#ffffff" fillOpacity="0.3" />
+                            <text x="42" y="56" fontSize="3.5" fill="#f0f8ff" className="font-bold" style={{ textShadow: '0 0 5px black' }}>-5°C</text>
                         </>
                     )}
                     {/* Pressure Isobars */}
