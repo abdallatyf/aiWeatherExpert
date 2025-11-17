@@ -1,14 +1,19 @@
-
-import { GoogleGenAI, Modality, GenerateContentResponse } from "@google/genai";
+import { GoogleGenAI, Modality } from "@google/genai";
 import { AnalysisResult } from '../types';
 
-const API_KEY = process.env.API_KEY;
-
-if (!API_KEY) {
-    throw new Error("API_KEY environment variable not set");
+/**
+ * Creates and returns a GoogleGenAI client instance.
+ * It ensures the API key is available from the environment variables.
+ * @throws {Error} if the API key is not configured.
+ * @returns {GoogleGenAI} An instance of the GoogleGenAI client.
+ */
+function getGeminiClient(): GoogleGenAI {
+    if (!process.env.API_KEY) {
+        throw new Error("The Gemini API key is not configured. Please make sure it's set up correctly.");
+    }
+    // Directly use the environment variable as per the best practice guidelines.
+    return new GoogleGenAI({ apiKey: process.env.API_KEY });
 }
-
-const ai = new GoogleGenAI({ apiKey: API_KEY });
 
 /**
  * Generates a weather explanation and a visual summary from a satellite image.
@@ -18,6 +23,8 @@ const ai = new GoogleGenAI({ apiKey: API_KEY });
  */
 export async function explainWeatherFromImage(mimeType: string, imageData: string): Promise<AnalysisResult> {
     try {
+        const ai = getGeminiClient();
+        
         const imagePart = {
             inlineData: {
                 mimeType,
@@ -53,32 +60,45 @@ export async function explainWeatherFromImage(mimeType: string, imageData: strin
         const [textResponse, visualResponse] = await Promise.all([textResponsePromise, visualResponsePromise]);
 
         // --- Process Textual Response ---
-        const explanation = textResponse.text;
+        // Defensively access '.text' and check for a valid explanation, guarding against a nullish response object.
+        const explanation = textResponse?.text;
         if (!explanation) {
-            throw new Error("The AI did not return a textual analysis.");
+            const finishReason = textResponse?.candidates?.[0]?.finishReason;
+            const message = finishReason === 'SAFETY'
+                ? "The analysis was blocked due to safety settings. Please try a different image."
+                : "The AI did not return a textual analysis. The response may have been empty or incomplete.";
+            throw new Error(message);
         }
 
         // --- Process Visual Response ---
-        let visualSummary = '';
-        let visualSummaryMimeType = '';
+        // Defensively parse the response to find the visual data, guarding against malformed or incomplete structures.
+        const visualPart = visualResponse?.candidates?.[0]?.content?.parts?.find(
+            (part) => part?.inlineData
+        );
+        
+        const visualData = visualPart?.inlineData?.data;
+        const visualMimeType = visualPart?.inlineData?.mimeType;
 
-        const visualPart = visualResponse.candidates?.[0]?.content?.parts?.find(part => part.inlineData);
-        if (visualPart?.inlineData) {
-            visualSummary = visualPart.inlineData.data;
-            visualSummaryMimeType = visualPart.inlineData.mimeType;
+        if (!visualData || !visualMimeType) {
+            const finishReason = visualResponse?.candidates?.[0]?.finishReason;
+            const message = finishReason === 'SAFETY'
+                ? "The visual summary was blocked due to safety settings. Please try a different image."
+                : "The AI did not return a complete visual summary. The response may have been missing image data or a MIME type.";
+            throw new Error(message);
         }
 
-        if (!visualSummary) {
-             throw new Error("The AI did not return a visual summary image.");
-        }
+        const visualSummary = visualData;
+        const visualSummaryMimeType = visualMimeType;
 
         return { explanation, visualSummary, visualSummaryMimeType };
 
     } catch (error) {
         console.error("Error generating content from Gemini:", error);
         if (error instanceof Error) {
+            // Re-throw the error with a more user-friendly context.
             throw new Error(`An error occurred while analyzing the image: ${error.message}`);
         }
+        // Catch non-Error objects that might be thrown.
         throw new Error("An unknown error occurred while analyzing the image.");
     }
 }
