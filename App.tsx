@@ -84,7 +84,7 @@ const BookmarkIcon: React.FC<{ className?: string }> = ({ className }) => (
 
 // --- Main App Component ---
 
-type AppMode = 'home' | 'upload' | 'historical' | 'viewing' | 'sharing' | 'saved' | 'liveMap';
+type AppMode = 'home' | 'upload' | 'historical' | 'viewing' | 'sharing' | 'saved' | 'webCapture';
 
 function App() {
     const [mode, setMode] = useState<AppMode>('home');
@@ -100,6 +100,8 @@ function App() {
     const [shareUrl, setShareUrl] = useState<string>('');
     const [showCopied, setShowCopied] = useState(false);
     const [lastFailedAction, setLastFailedAction] = useState<(() => Promise<void>) | null>(null);
+    const [iframeUrl, setIframeUrl] = useState<string>('https://zoom.earth/maps/satellite/#view=8.39055,124.93262,8z/overlays=radar');
+    const [iframeUrlInput, setIframeUrlInput] = useState<string>('https://zoom.earth/maps/satellite/#view=8.39055,124.93262,8z/overlays=radar');
 
     const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -150,7 +152,7 @@ function App() {
     // --- Event Handlers ---
 
     const handleBack = () => {
-        if (mode === 'upload' || mode === 'historical' || mode === 'saved' || mode === 'liveMap') {
+        if (mode === 'upload' || mode === 'historical' || mode === 'saved' || mode === 'webCapture') {
             setMode('home');
         } else if (mode === 'viewing' || mode === 'sharing') {
             // Determine where to go back to
@@ -371,6 +373,12 @@ function App() {
         }
     }, [mode, selectedDate]);
 
+    useEffect(() => {
+        if (mode === 'webCapture') {
+            setIframeUrlInput(iframeUrl);
+        }
+    }, [mode, iframeUrl]);
+
 
     const copyToClipboard = () => {
         if (!shareUrl) return;
@@ -408,7 +416,7 @@ function App() {
             <SparklesIcon className="w-16 h-16 text-cyan-400" />
             <h1 className="mt-4 text-4xl font-extrabold tracking-tight text-white">AI Weather Explainer</h1>
             <p className="mt-2 text-lg text-gray-400 max-w-2xl">
-                Upload a satellite image, explore historical data, or view a live map to get a detailed AI-powered meteorological analysis.
+                Upload a satellite image, explore historical data, or analyze web content to get a detailed AI-powered meteorological analysis.
             </p>
             <div className="mt-8 flex flex-col sm:flex-row flex-wrap justify-center gap-4">
                 <button onClick={() => setMode('upload')} className="w-full sm:w-auto flex items-center justify-center px-8 py-3 border border-transparent text-base font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700 transition-all duration-200 transform hover:scale-105">
@@ -417,8 +425,8 @@ function App() {
                 <button onClick={() => setMode('historical')} className="w-full sm:w-auto flex items-center justify-center px-8 py-3 border border-transparent text-base font-medium rounded-md text-white bg-teal-600 hover:bg-teal-700 transition-all duration-200 transform hover:scale-105">
                     <CalendarDaysIcon className="w-5 h-5" /> <span className="ml-3">Historical Data</span>
                 </button>
-                 <button onClick={() => setMode('liveMap')} className="w-full sm:w-auto flex items-center justify-center px-8 py-3 border border-transparent text-base font-medium rounded-md text-white bg-purple-600 hover:bg-purple-700 transition-all duration-200 transform hover:scale-105">
-                    <ComputerDesktopIcon className="w-5 h-5" /> <span className="ml-3">Analyze Live Map</span>
+                 <button onClick={() => setMode('webCapture')} className="w-full sm:w-auto flex items-center justify-center px-8 py-3 border border-transparent text-base font-medium rounded-md text-white bg-purple-600 hover:bg-purple-700 transition-all duration-200 transform hover:scale-105">
+                    <ComputerDesktopIcon className="w-5 h-5" /> <span className="ml-3">Analyze from Web</span>
                 </button>
                  <button onClick={() => setMode('saved')} className="mt-4 sm:mt-0 w-full sm:w-auto flex items-center justify-center px-6 py-3 border border-transparent text-base font-medium rounded-md text-gray-200 bg-gray-700 hover:bg-gray-600 transition-all duration-200 transform hover:scale-105">
                     <BookmarkIcon className="w-5 h-5" /> <span className="ml-3">Saved Analyses ({savedAnalyses.length})</span>
@@ -553,63 +561,91 @@ function App() {
         </div>
     );
     
-    const renderLiveMap = () => (
-        <div className="flex flex-col h-full">
-            {renderHeader("Analyze Live Map", true)}
-            <div className="flex-grow p-4 md:p-8 flex flex-col items-center">
-                <div className="w-full h-full max-w-7xl flex flex-col">
-                    <p className="text-center text-gray-400 mb-4">
-                        Position the map to the area you want to analyze, then click capture. You will be prompted to select this browser tab for screen sharing to perform the capture.
-                    </p>
-                    <div className="flex-grow w-full border border-gray-700 rounded-lg overflow-hidden bg-black">
-                        <iframe
-                            src="https://zoom.earth/maps/satellite/#view=8.39055,124.93262,8z/overlays=radar"
-                            className="w-full h-full"
-                            title="Zoom Earth Live Map"
-                            sandbox="allow-scripts allow-same-origin"
-                        ></iframe>
-                    </div>
-                     {error && (
-                        <div className="mt-4 bg-red-900/50 border border-red-700/50 text-red-300 px-4 py-3 rounded-lg relative animate-fade-in flex items-center justify-between" role="alert">
-                            <div>
-                                <strong className="font-bold">Error:</strong>
-                                <span className="block sm:inline ml-2">{error}</span>
+    const renderWebCapture = () => {
+        const handleUrlSubmit = (e: React.FormEvent) => {
+            e.preventDefault();
+            setIframeUrl(iframeUrlInput);
+        };
+
+        return (
+            <div className="flex flex-col h-full">
+                {renderHeader("Analyze from Web", true)}
+                <div className="flex-grow p-4 md:p-8 flex flex-col items-center">
+                    <div className="w-full h-full max-w-7xl flex flex-col">
+                        <p className="text-center text-gray-400 mb-2">
+                            You can paste a URL from any website, then position the content before capturing for analysis.
+                        </p>
+                         <form onSubmit={handleUrlSubmit} className="mb-4 flex gap-2">
+                            <div className="relative flex-grow">
+                                <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3">
+                                    <LinkIcon className="h-5 w-5 text-gray-400" />
+                                </div>
+                                <input
+                                    type="url"
+                                    value={iframeUrlInput}
+                                    onChange={(e) => setIframeUrlInput(e.target.value)}
+                                    placeholder="https://website.com/..."
+                                    className="block w-full rounded-md border-0 bg-white/5 py-1.5 pl-10 text-white ring-1 ring-inset ring-white/10 focus:ring-2 focus:ring-inset focus:ring-purple-500 sm:text-sm sm:leading-6"
+                                />
                             </div>
-                            <div className="flex items-center space-x-2">
-                                {lastFailedAction && (
-                                    <button
-                                        type="button"
-                                        onClick={lastFailedAction}
-                                        className="inline-flex items-center px-3 py-1.5 border border-transparent text-sm font-medium rounded-md text-white bg-yellow-600 hover:bg-yellow-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-gray-900 focus:ring-yellow-500 transition-all duration-200"
-                                    >
-                                        Retry
-                                    </button>
-                                )}
-                                <button type="button" onClick={() => { setError(null); setLastFailedAction(null); }} className="p-1 rounded-full hover:bg-red-800/50" aria-label="Close">
-                                    <XMarkIcon className="w-5 h-5" />
-                                </button>
-                            </div>
+                            <button
+                                type="submit"
+                                className="rounded-md bg-purple-600 px-3 py-1.5 text-sm font-semibold text-white shadow-sm hover:bg-purple-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-purple-600"
+                            >
+                                Load
+                            </button>
+                        </form>
+                        <div className="flex-grow w-full border border-gray-700 rounded-lg overflow-hidden bg-black">
+                            <iframe
+                                key={iframeUrl}
+                                src={iframeUrl}
+                                className="w-full h-full"
+                                title="Web Content Viewer"
+                                sandbox="allow-scripts allow-same-origin allow-popups allow-forms"
+                            ></iframe>
                         </div>
-                    )}
-                    <button
-                        onClick={handleCaptureAndAnalyze}
-                        disabled={isLoading}
-                        className="mt-6 w-full flex justify-center items-center px-4 py-3 border border-transparent text-base font-medium rounded-md text-white bg-purple-600 hover:bg-purple-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-gray-900 focus:ring-purple-500 disabled:bg-gray-600 disabled:cursor-not-allowed transition-all duration-200"
-                    >
-                        {isLoading ? (
-                            <>
-                                <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                                </svg>
-                                Analyzing...
-                            </>
-                        ) : "Capture & Analyze Map View"}
-                    </button>
+                         {error && (
+                            <div className="mt-4 bg-red-900/50 border border-red-700/50 text-red-300 px-4 py-3 rounded-lg relative animate-fade-in flex items-center justify-between" role="alert">
+                                <div>
+                                    <strong className="font-bold">Error:</strong>
+                                    <span className="block sm:inline ml-2">{error}</span>
+                                </div>
+                                <div className="flex items-center space-x-2">
+                                    {lastFailedAction && (
+                                        <button
+                                            type="button"
+                                            onClick={lastFailedAction}
+                                            className="inline-flex items-center px-3 py-1.5 border border-transparent text-sm font-medium rounded-md text-white bg-yellow-600 hover:bg-yellow-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-gray-900 focus:ring-yellow-500 transition-all duration-200"
+                                        >
+                                            Retry
+                                        </button>
+                                    )}
+                                    <button type="button" onClick={() => { setError(null); setLastFailedAction(null); }} className="p-1 rounded-full hover:bg-red-800/50" aria-label="Close">
+                                        <XMarkIcon className="w-5 h-5" />
+                                    </button>
+                                </div>
+                            </div>
+                        )}
+                        <button
+                            onClick={handleCaptureAndAnalyze}
+                            disabled={isLoading}
+                            className="mt-6 w-full flex justify-center items-center px-4 py-3 border border-transparent text-base font-medium rounded-md text-white bg-purple-600 hover:bg-purple-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-gray-900 focus:ring-purple-500 disabled:bg-gray-600 disabled:cursor-not-allowed transition-all duration-200"
+                        >
+                            {isLoading ? (
+                                <>
+                                    <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                    </svg>
+                                    Analyzing...
+                                </>
+                            ) : "Capture & Analyze Web View"}
+                        </button>
+                    </div>
                 </div>
             </div>
-        </div>
-    );
+        );
+    };
 
     const ImageViewer: React.FC<{ original: StorableImage, summary: StorableImage }> = ({ original, summary }) => {
         const [showSummary, setShowSummary] = useState(true);
@@ -784,7 +820,7 @@ function App() {
             case 'home': return renderHome();
             case 'upload': return renderUpload();
             case 'historical': return renderHistorical();
-            case 'liveMap': return renderLiveMap();
+            case 'webCapture': return renderWebCapture();
             case 'viewing': return renderViewing();
             case 'sharing': return renderSharing();
             case 'saved': return renderSaved();
