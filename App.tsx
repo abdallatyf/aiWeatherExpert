@@ -1,7 +1,5 @@
 
 
-
-
 import React, { useState, useCallback, useRef, useEffect } from 'react';
 import QRCode from 'qrcode';
 import { zlibSync, unzlibSync } from 'fflate';
@@ -20,6 +18,12 @@ const UploadIcon: React.FC = () => (
 const CalendarDaysIcon: React.FC<{ className?: string }> = ({ className }) => (
     <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className={className}>
         <path strokeLinecap="round" strokeLinejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 0 1 2.25-2.25h13.5A2.25 2.25 0 0 1 21 7.5v11.25M3 18.75a2.25 2.25 0 0 0 2.25 2.25h13.5A2.25 2.25 0 0 0 21 18.75m-18 0h18" />
+    </svg>
+);
+
+const ComputerDesktopIcon: React.FC<{ className?: string }> = ({ className }) => (
+    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className={className}>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M9 17.25v1.007a3 3 0 0 1-.879 2.122L7.5 21h9l-.621-.621A3 3 0 0 1 15 18.257V17.25m6-12V15a2.25 2.25 0 0 1-2.25 2.25H5.25A2.25 2.25 0 0 1 3 15V5.25A2.25 2.25 0 0 1 5.25 3h13.5A2.25 2.25 0 0 1 21 5.25Z" />
     </svg>
 );
 
@@ -80,7 +84,7 @@ const BookmarkIcon: React.FC<{ className?: string }> = ({ className }) => (
 
 // --- Main App Component ---
 
-type AppMode = 'home' | 'upload' | 'historical' | 'viewing' | 'sharing' | 'saved';
+type AppMode = 'home' | 'upload' | 'historical' | 'viewing' | 'sharing' | 'saved' | 'liveMap';
 
 function App() {
     const [mode, setMode] = useState<AppMode>('home');
@@ -146,7 +150,7 @@ function App() {
     // --- Event Handlers ---
 
     const handleBack = () => {
-        if (mode === 'upload' || mode === 'historical' || mode === 'saved') {
+        if (mode === 'upload' || mode === 'historical' || mode === 'saved' || mode === 'liveMap') {
             setMode('home');
         } else if (mode === 'viewing' || mode === 'sharing') {
             // Determine where to go back to
@@ -257,6 +261,76 @@ function App() {
 
         analysisFn();
     }, [selectedDate, saveAnalysis]);
+    
+    const handleCaptureAndAnalyze = useCallback(async () => {
+        const analysisFn = async () => {
+            setIsLoading(true);
+            setError(null);
+            setLastFailedAction(null);
+            setAnalysisResult(null);
+
+            try {
+                const stream = await navigator.mediaDevices.getDisplayMedia({
+                    // FIX: The `cursor` property is a valid constraint for `getDisplayMedia`, but may not be present in some TypeScript DOM type definitions. Casting to `any` bypasses this type check.
+                    video: { cursor: "never" } as any,
+                    audio: false,
+                });
+
+                const track = stream.getVideoTracks()[0];
+                const video = document.createElement('video');
+                video.srcObject = stream;
+                
+                await new Promise((resolve, reject) => {
+                    video.onloadedmetadata = resolve;
+                    video.onerror = reject;
+                });
+                video.play();
+                
+                // Allow a moment for the video to render the first frame.
+                await new Promise(resolve => setTimeout(resolve, 100));
+
+                const canvas = document.createElement('canvas');
+                canvas.width = video.videoWidth;
+                canvas.height = video.videoHeight;
+                const context = canvas.getContext('2d');
+                if (!context) throw new Error("Could not get canvas context.");
+                context.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+                track.stop();
+                video.srcObject = null;
+
+                const base64 = canvas.toDataURL('image/jpeg').split(',')[1];
+                const mimeType = 'image/jpeg';
+
+                const result = await explainWeatherFromImage(mimeType, base64);
+                setAnalysisResult(result);
+                const newAnalysis: SavedAnalysis = {
+                    id: Date.now().toString(),
+                    date: new Date().toISOString().split('T')[0],
+                    originalImage: { base64, mimeType },
+                    ...result,
+                };
+                saveAnalysis(newAnalysis);
+                setActiveAnalysis(newAnalysis);
+                setMode('viewing');
+
+            } catch (err) {
+                let errorMessage: string;
+                if (err instanceof DOMException && err.name === 'NotAllowedError') {
+                    errorMessage = "Screen capture permission was denied. Please allow sharing to proceed.";
+                } else {
+                    errorMessage = err instanceof Error ? err.message : "An unknown error occurred during capture or analysis.";
+                }
+                setError(errorMessage);
+                setLastFailedAction(() => analysisFn);
+                console.error("Live Map analysis failed:", err);
+            } finally {
+                setIsLoading(false);
+            }
+        };
+        analysisFn();
+    }, [saveAnalysis]);
+
 
     const handleShare = async () => {
         if (!activeAnalysis || isSharingLoading) return;
@@ -333,17 +407,20 @@ function App() {
         <div className="flex flex-col items-center justify-center min-h-full p-8 text-center animate-fade-in">
             <SparklesIcon className="w-16 h-16 text-cyan-400" />
             <h1 className="mt-4 text-4xl font-extrabold tracking-tight text-white">AI Weather Explainer</h1>
-            <p className="mt-2 text-lg text-gray-400 max-w-xl">
-                Upload a satellite weather image or explore historical data to get a detailed AI-powered meteorological analysis.
+            <p className="mt-2 text-lg text-gray-400 max-w-2xl">
+                Upload a satellite image, explore historical data, or view a live map to get a detailed AI-powered meteorological analysis.
             </p>
-            <div className="mt-8 flex flex-col sm:flex-row gap-4">
+            <div className="mt-8 flex flex-col sm:flex-row flex-wrap justify-center gap-4">
                 <button onClick={() => setMode('upload')} className="w-full sm:w-auto flex items-center justify-center px-8 py-3 border border-transparent text-base font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700 transition-all duration-200 transform hover:scale-105">
                     <UploadIcon /> <span className="ml-3">Upload Image</span>
                 </button>
                 <button onClick={() => setMode('historical')} className="w-full sm:w-auto flex items-center justify-center px-8 py-3 border border-transparent text-base font-medium rounded-md text-white bg-teal-600 hover:bg-teal-700 transition-all duration-200 transform hover:scale-105">
                     <CalendarDaysIcon className="w-5 h-5" /> <span className="ml-3">Historical Data</span>
                 </button>
-                 <button onClick={() => setMode('saved')} className="w-full sm:w-auto flex items-center justify-center px-6 py-3 border border-transparent text-base font-medium rounded-md text-gray-200 bg-gray-700 hover:bg-gray-600 transition-all duration-200 transform hover:scale-105">
+                 <button onClick={() => setMode('liveMap')} className="w-full sm:w-auto flex items-center justify-center px-8 py-3 border border-transparent text-base font-medium rounded-md text-white bg-purple-600 hover:bg-purple-700 transition-all duration-200 transform hover:scale-105">
+                    <ComputerDesktopIcon className="w-5 h-5" /> <span className="ml-3">Analyze Live Map</span>
+                </button>
+                 <button onClick={() => setMode('saved')} className="mt-4 sm:mt-0 w-full sm:w-auto flex items-center justify-center px-6 py-3 border border-transparent text-base font-medium rounded-md text-gray-200 bg-gray-700 hover:bg-gray-600 transition-all duration-200 transform hover:scale-105">
                     <BookmarkIcon className="w-5 h-5" /> <span className="ml-3">Saved Analyses ({savedAnalyses.length})</span>
                 </button>
             </div>
@@ -470,6 +547,64 @@ function App() {
                                 Analyzing...
                             </>
                         ) : "Explain Historical Weather"}
+                    </button>
+                </div>
+            </div>
+        </div>
+    );
+    
+    const renderLiveMap = () => (
+        <div className="flex flex-col h-full">
+            {renderHeader("Analyze Live Map", true)}
+            <div className="flex-grow p-4 md:p-8 flex flex-col items-center">
+                <div className="w-full h-full max-w-7xl flex flex-col">
+                    <p className="text-center text-gray-400 mb-4">
+                        Position the map to the area you want to analyze, then click capture. You will be prompted to select this browser tab for screen sharing to perform the capture.
+                    </p>
+                    <div className="flex-grow w-full border border-gray-700 rounded-lg overflow-hidden bg-black">
+                        <iframe
+                            src="https://zoom.earth/maps/satellite/#view=8.39055,124.93262,8z/overlays=radar"
+                            className="w-full h-full"
+                            title="Zoom Earth Live Map"
+                            sandbox="allow-scripts allow-same-origin"
+                        ></iframe>
+                    </div>
+                     {error && (
+                        <div className="mt-4 bg-red-900/50 border border-red-700/50 text-red-300 px-4 py-3 rounded-lg relative animate-fade-in flex items-center justify-between" role="alert">
+                            <div>
+                                <strong className="font-bold">Error:</strong>
+                                <span className="block sm:inline ml-2">{error}</span>
+                            </div>
+                            <div className="flex items-center space-x-2">
+                                {lastFailedAction && (
+                                    <button
+                                        type="button"
+                                        onClick={lastFailedAction}
+                                        className="inline-flex items-center px-3 py-1.5 border border-transparent text-sm font-medium rounded-md text-white bg-yellow-600 hover:bg-yellow-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-gray-900 focus:ring-yellow-500 transition-all duration-200"
+                                    >
+                                        Retry
+                                    </button>
+                                )}
+                                <button type="button" onClick={() => { setError(null); setLastFailedAction(null); }} className="p-1 rounded-full hover:bg-red-800/50" aria-label="Close">
+                                    <XMarkIcon className="w-5 h-5" />
+                                </button>
+                            </div>
+                        </div>
+                    )}
+                    <button
+                        onClick={handleCaptureAndAnalyze}
+                        disabled={isLoading}
+                        className="mt-6 w-full flex justify-center items-center px-4 py-3 border border-transparent text-base font-medium rounded-md text-white bg-purple-600 hover:bg-purple-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-gray-900 focus:ring-purple-500 disabled:bg-gray-600 disabled:cursor-not-allowed transition-all duration-200"
+                    >
+                        {isLoading ? (
+                            <>
+                                <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                </svg>
+                                Analyzing...
+                            </>
+                        ) : "Capture & Analyze Map View"}
                     </button>
                 </div>
             </div>
@@ -649,6 +784,7 @@ function App() {
             case 'home': return renderHome();
             case 'upload': return renderUpload();
             case 'historical': return renderHistorical();
+            case 'liveMap': return renderLiveMap();
             case 'viewing': return renderViewing();
             case 'sharing': return renderSharing();
             case 'saved': return renderSaved();
