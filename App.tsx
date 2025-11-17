@@ -625,7 +625,8 @@ function App() {
     };
 
     const ImageViewer: React.FC<{ original: StorableImage, summary: StorableImage }> = ({ original, summary }) => {
-        const [showSummary, setShowSummary] = useState(true);
+        const [viewMode, setViewMode] = useState<'side-by-side' | 'toggle'>('side-by-side');
+        const [showSummaryInToggle, setShowSummaryInToggle] = useState(true);
         const [isOriginalLoaded, setOriginalLoaded] = useState(false);
         const [isSummaryLoaded, setSummaryLoaded] = useState(false);
         const showLoader = !isOriginalLoaded || !isSummaryLoaded;
@@ -642,21 +643,57 @@ function App() {
         return (
             <div className="relative w-full aspect-square border border-gray-700 rounded-lg overflow-hidden bg-black">
                 {showLoader && <ImageLoadingSpinner />}
-                <img
-                    src={`data:${original.mimeType};base64,${original.base64}`}
-                    alt="Original satellite"
-                    className={`absolute inset-0 w-full h-full object-contain transition-opacity duration-500 ${showSummary ? 'opacity-0' : 'opacity-100'} ${isOriginalLoaded ? 'opacity-100' : 'opacity-0'}`}
-                    onLoad={() => setOriginalLoaded(true)}
-                />
-                <img
-                    src={`data:${summary.mimeType};base64,${summary.base64}`}
-                    alt="AI visual summary"
-                    className={`absolute inset-0 w-full h-full object-contain transition-opacity duration-500 ${showSummary ? 'opacity-100' : 'opacity-0'} ${isSummaryLoaded ? 'opacity-100' : 'opacity-0'}`}
-                    onLoad={() => setSummaryLoaded(true)}
-                />
-                <div className="absolute bottom-4 left-1/2 -translate-x-1/2 bg-gray-900/70 backdrop-blur-sm p-1 rounded-full flex items-center space-x-1 z-10">
-                    <button onClick={() => setShowSummary(false)} className={`px-4 py-1.5 text-sm font-medium rounded-full ${!showSummary ? 'bg-indigo-600 text-white' : 'text-gray-300 hover:bg-gray-700'}`}>Original</button>
-                    <button onClick={() => setShowSummary(true)} className={`px-4 py-1.5 text-sm font-medium rounded-full ${showSummary ? 'bg-indigo-600 text-white' : 'text-gray-300 hover:bg-gray-700'}`}>AI Summary</button>
+                
+                {viewMode === 'toggle' ? (
+                    <>
+                        <img
+                            src={`data:${original.mimeType};base64,${original.base64}`}
+                            alt="Original satellite"
+                            className={`absolute inset-0 w-full h-full object-contain transition-opacity duration-500 ${showSummaryInToggle ? 'opacity-0' : 'opacity-100'}`}
+                            onLoad={() => setOriginalLoaded(true)}
+                        />
+                        <img
+                            src={`data:${summary.mimeType};base64,${summary.base64}`}
+                            alt="AI visual summary"
+                            className={`absolute inset-0 w-full h-full object-contain transition-opacity duration-500 ${showSummaryInToggle ? 'opacity-100' : 'opacity-0'}`}
+                            onLoad={() => setSummaryLoaded(true)}
+                        />
+                    </>
+                ) : (
+                    <div className="absolute inset-0 flex h-full w-full">
+                        <div className="relative w-1/2 h-full border-r border-gray-600/50">
+                            <img
+                                src={`data:${original.mimeType};base64,${original.base64}`}
+                                alt="Original satellite"
+                                className="w-full h-full object-contain"
+                                onLoad={() => setOriginalLoaded(true)}
+                            />
+                            <div className="absolute bottom-2 left-2 bg-black/60 text-white text-xs px-2 py-1 rounded-md backdrop-blur-sm">Original</div>
+                        </div>
+                        <div className="relative w-1/2 h-full">
+                            <img
+                                src={`data:${summary.mimeType};base64,${summary.base64}`}
+                                alt="AI visual summary"
+                                className="w-full h-full object-contain"
+                                onLoad={() => setSummaryLoaded(true)}
+                            />
+                            <div className="absolute bottom-2 right-2 bg-black/60 text-white text-xs px-2 py-1 rounded-md backdrop-blur-sm">AI Summary</div>
+                        </div>
+                    </div>
+                )}
+
+                <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex items-center space-x-2 z-10">
+                    <div className="bg-gray-900/70 backdrop-blur-sm p-1 rounded-full flex items-center space-x-1">
+                        <button onClick={() => setViewMode('side-by-side')} className={`px-3 py-1.5 text-sm font-medium rounded-full transition-colors ${viewMode === 'side-by-side' ? 'bg-indigo-600 text-white' : 'text-gray-300 hover:bg-gray-700'}`}>Compare</button>
+                        <button onClick={() => setViewMode('toggle')} className={`px-3 py-1.5 text-sm font-medium rounded-full transition-colors ${viewMode === 'toggle' ? 'bg-indigo-600 text-white' : 'text-gray-300 hover:bg-gray-700'}`}>Toggle</button>
+                    </div>
+                    
+                    {viewMode === 'toggle' && (
+                        <div className="bg-gray-900/70 backdrop-blur-sm p-1 rounded-full flex items-center space-x-1 animate-fade-in">
+                            <button onClick={() => setShowSummaryInToggle(false)} className={`px-4 py-1.5 text-sm font-medium rounded-full transition-colors ${!showSummaryInToggle ? 'bg-indigo-600 text-white' : 'text-gray-300 hover:bg-gray-700'}`}>Original</button>
+                            <button onClick={() => setShowSummaryInToggle(true)} className={`px-4 py-1.5 text-sm font-medium rounded-full transition-colors ${showSummaryInToggle ? 'bg-indigo-600 text-white' : 'text-gray-300 hover:bg-gray-700'}`}>AI Summary</button>
+                        </div>
+                    )}
                 </div>
             </div>
         );
