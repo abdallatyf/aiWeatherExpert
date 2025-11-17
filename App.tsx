@@ -1,6 +1,7 @@
 
 
 
+
 import React, { useState, useCallback, useRef, useEffect } from 'react';
 import QRCode from 'qrcode';
 import { zlibSync, unzlibSync } from 'fflate';
@@ -568,7 +569,6 @@ function App() {
                                 src={liveMapUrl}
                                 className="w-full h-full"
                                 title="Live Weather Map"
-                                sandbox="allow-scripts allow-same-origin allow-popups allow-forms"
                             ></iframe>
                         </div>
                          {error && (
@@ -606,7 +606,7 @@ function App() {
                                     </svg>
                                     Analyzing...
                                 </>
-                            ) : "Capture & Analyze Map View"}
+                            ) : "Analyze"}
                         </button>
                     </div>
                 </div>
