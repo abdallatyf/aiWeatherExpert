@@ -94,11 +94,29 @@ export async function explainWeatherFromImage(mimeType: string, imageData: strin
 
     } catch (error) {
         console.error("Error generating content from Gemini:", error);
+
+        let userMessage = "An unknown error occurred while analyzing the image. Please check the console for details.";
+
         if (error instanceof Error) {
-            // Re-throw the error with a more user-friendly context.
-            throw new Error(`An error occurred while analyzing the image: ${error.message}`);
+            const errorMessage = error.message.toLowerCase();
+            
+            // Check for specific keywords from the Gemini API error messages
+            if (errorMessage.includes('api key not valid') || errorMessage.includes('permission denied')) {
+                userMessage = "API Key Error: The provided API key is invalid or lacks the necessary permissions. Please check your configuration.";
+            } else if (errorMessage.includes('rate limit')) {
+                userMessage = "Rate Limit Exceeded: Too many requests have been sent in a short period. Please wait a moment before trying again.";
+            } else if (errorMessage.includes('network error') || errorMessage.includes('failed to fetch')) {
+                userMessage = "Network Error: Could not connect to the analysis service. Please check your internet connection and try again.";
+            } else if (errorMessage.includes('deadline exceeded') || errorMessage.includes('timeout')) {
+                userMessage = "Request Timed Out: The analysis took too long to complete. This might be due to a server issue. Please try again later.";
+            } else if (errorMessage.includes('resource exhausted')) {
+                userMessage = "Resource Exhausted: The system is currently under heavy load. Please try again in a few moments.";
+            } else {
+                // Use the original error message if it's not one of the common cases but still informative.
+                userMessage = error.message;
+            }
         }
-        // Catch non-Error objects that might be thrown.
-        throw new Error("An unknown error occurred while analyzing the image.");
+
+        throw new Error(userMessage);
     }
 }

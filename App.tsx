@@ -167,6 +167,29 @@ function App() {
     const onImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         if (e.target.files && e.target.files[0]) {
             const file = e.target.files[0];
+            const supportedTypes = ['image/png', 'image/jpeg', 'image/webp', 'image/gif'];
+            const maxSizeInMB = 10;
+            const maxSize = maxSizeInMB * 1024 * 1024;
+
+            const resetAndError = (message: string) => {
+                setError(message);
+                setImageFile(null);
+                setLastFailedAction(null);
+                if (fileInputRef.current) {
+                    fileInputRef.current.value = '';
+                }
+            };
+
+            if (!supportedTypes.includes(file.type)) {
+                resetAndError(`Unsupported file type: '${file.type}'. Please upload a PNG, JPG, WEBP, or GIF.`);
+                return;
+            }
+
+            if (file.size > maxSize) {
+                resetAndError(`File is too large (${(file.size / 1024 / 1024).toFixed(2)} MB). Please upload an image under ${maxSizeInMB} MB.`);
+                return;
+            }
+
             const reader = new FileReader();
             reader.onload = (event) => {
                 if (event.target?.result) {
@@ -175,6 +198,9 @@ function App() {
                     setError(null);
                     setLastFailedAction(null);
                 }
+            };
+            reader.onerror = () => {
+                resetAndError("Could not read the selected file. It might be corrupted.");
             };
             reader.readAsDataURL(file);
         }
