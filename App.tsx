@@ -97,7 +97,9 @@ function App() {
     const [qrCodeUrl, setQrCodeUrl] = useState<string>('');
     const [shareUrl, setShareUrl] = useState<string>('');
     const [showCopied, setShowCopied] = useState(false);
+    const [isMapInteracted, setIsMapInteracted] = useState(false);
     const [lastFailedAction, setLastFailedAction] = useState<(() => Promise<void>) | null>(null);
+    const [showPermissionModal, setShowPermissionModal] = useState(false);
     const liveMapUrl = 'https://zoom.earth/maps/satellite/#view=7.389094,124.063201,9z/overlays=radar';
 
     const fileInputRef = useRef<HTMLInputElement>(null);
@@ -267,6 +269,7 @@ function App() {
             setError(null);
             setLastFailedAction(null);
             setAnalysisResult(null);
+            setShowPermissionModal(false); // Hide modal if we are retrying from it
 
             try {
                 const stream = await navigator.mediaDevices.getDisplayMedia({
@@ -314,15 +317,16 @@ function App() {
                 setMode('viewing');
 
             } catch (err) {
-                let errorMessage: string;
                 if (err instanceof DOMException && err.name === 'NotAllowedError') {
-                    errorMessage = "Screen capture permission was denied. Please allow sharing to proceed.";
+                    // User denied permission. Show a modal to encourage them to retry.
+                    setShowPermissionModal(true);
                 } else {
-                    errorMessage = err instanceof Error ? err.message : "An unknown error occurred during capture or analysis.";
+                    const errorMessage = err instanceof Error ? err.message : "An unknown error occurred during capture or analysis.";
+                    setError(errorMessage);
+                    // For other errors, provide a way to retry the last action.
+                    setLastFailedAction(() => analysisFn);
+                    console.error("Live Map analysis failed:", err);
                 }
-                setError(errorMessage);
-                setLastFailedAction(() => analysisFn);
-                console.error("Live Map analysis failed:", err);
             } finally {
                 setIsLoading(false);
             }
@@ -369,6 +373,13 @@ function App() {
             setSelectedDate(new Date().toISOString().split('T')[0]);
         }
     }, [mode, selectedDate]);
+    
+    useEffect(() => {
+        // Reset interaction state when leaving the web capture mode
+        if (mode !== 'webCapture') {
+            setIsMapInteracted(false);
+        }
+    }, [mode]);
 
     const copyToClipboard = () => {
         if (!shareUrl) return;
@@ -558,7 +569,7 @@ function App() {
                 <div className="flex-grow p-4 md:p-8 flex flex-col items-center">
                     <div className="w-full h-full max-w-7xl flex flex-col">
                         <p className="text-center text-gray-400 mb-4">
-                            Pan and zoom the map to the desired view, then capture it for a detailed meteorological analysis.
+                            Interact with the map to find a weather pattern. The analyze button will be enabled once you move your mouse over the map.
                         </p>
                         <div className="flex-grow w-full border border-gray-700 rounded-lg overflow-hidden bg-black">
                             <iframe
@@ -566,6 +577,7 @@ function App() {
                                 className="w-full h-full"
                                 title="Live Weather Map"
                                 allow="geolocation; fullscreen"
+                                onMouseEnter={() => setIsMapInteracted(true)}
                             ></iframe>
                         </div>
                          {error && (
@@ -592,7 +604,8 @@ function App() {
                         )}
                         <button
                             onClick={handleCaptureAndAnalyze}
-                            disabled={isLoading}
+                            disabled={isLoading || !isMapInteracted}
+                            title={!isMapInteracted ? "Move your mouse over the map to enable" : "Capture the current map view for analysis"}
                             className="mt-6 w-full flex justify-center items-center px-4 py-3 border border-transparent text-base font-medium rounded-md text-white bg-purple-600 hover:bg-purple-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-gray-900 focus:ring-purple-500 disabled:bg-gray-600 disabled:cursor-not-allowed transition-all duration-200"
                         >
                             {isLoading ? (
@@ -778,6 +791,33 @@ function App() {
         </div>
     );
 
+    const PermissionModal = () => (
+        <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 animate-fade-in" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+            <div className="bg-gray-800 rounded-lg shadow-xl p-8 max-w-md w-full text-center border border-yellow-600/50">
+                <ComputerDesktopIcon className="w-16 h-16 mx-auto text-yellow-400" />
+                <h2 id="modal-title" className="mt-4 text-2xl font-bold text-white">Permission Required</h2>
+                <p className="mt-2 text-gray-400">
+                    To analyze the live map, this app needs permission to view your screen.
+                    This is a one-time capture and is not recorded.
+                </p>
+                <div className="mt-6 flex justify-center gap-4">
+                    <button
+                        onClick={() => setShowPermissionModal(false)}
+                        className="px-6 py-2 rounded-md text-base font-medium text-gray-300 bg-gray-700 hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-gray-800 focus:ring-gray-500 transition-all"
+                    >
+                        Cancel
+                    </button>
+                    <button
+                        onClick={handleCaptureAndAnalyze}
+                        className="px-6 py-2 rounded-md text-base font-medium text-white bg-purple-600 hover:bg-purple-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-gray-800 focus:ring-purple-500 transition-all"
+                    >
+                        Grant Permission
+                    </button>
+                </div>
+            </div>
+        </div>
+    );
+
 
     const renderContent = () => {
         switch (mode) {
@@ -795,6 +835,7 @@ function App() {
     return (
         <main className="bg-gray-900 text-gray-200 font-sans h-screen flex flex-col">
             {renderContent()}
+            {showPermissionModal && <PermissionModal />}
         </main>
     );
 }
