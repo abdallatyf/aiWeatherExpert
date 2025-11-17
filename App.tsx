@@ -1,5 +1,7 @@
 
 
+
+
 import React, { useState, useCallback, useRef, useEffect } from 'react';
 import { ImageFile } from './types';
 import { explainWeatherFromImage, WeatherAnalysis, StormTrackPoint, AnomalyStreak, generateVisualSummaryImage, StormSurgeForecast, fetchLiveWeatherData, LiveWeatherData, Isobar, WindFieldPoint, fetch5DayForecast, ForecastDayData, refineVisualSummaryImage } from './services/geminiService';
@@ -77,29 +79,33 @@ const ThemeToggle = ({ theme, toggleTheme }: { theme: 'light' | 'dark', toggleTh
   </button>
 );
 
-const MapModal = ({ 
-  isOpen, 
-  onClose, 
+type OverlayKey = 'showHeatmap' | 'showWind' | 'showIsobars' | 'includeStormTrack' | 'includeAnomalies' | 'includeStormSurge';
+
+const MapModal = ({
+  isOpen,
+  onClose,
   analysis,
   forecastHour,
   activeOverlays,
   setTooltip,
-  highlightedSurgeLevel
-}: { 
-  isOpen: boolean, 
-  onClose: () => void, 
-  analysis: WeatherAnalysis | null,
-  forecastHour: number,
+  highlightedSurgeLevel,
+  onToggleOverlay,
+}: {
+  isOpen: boolean;
+  onClose: () => void;
+  analysis: WeatherAnalysis | null;
+  forecastHour: number;
   activeOverlays: {
-    showHeatmap: boolean,
-    showWind: boolean,
-    showIsobars: boolean,
-    includeStormTrack: boolean,
-    includeAnomalies: boolean,
-    includeStormSurge: boolean,
-  },
-  setTooltip: React.Dispatch<React.SetStateAction<{ visible: boolean; content: React.ReactNode; x: number; y: number }>>,
-  highlightedSurgeLevel: string | null,
+    showHeatmap: boolean;
+    showWind: boolean;
+    showIsobars: boolean;
+    includeStormTrack: boolean;
+    includeAnomalies: boolean;
+    includeStormSurge: boolean;
+  };
+  setTooltip: React.Dispatch<React.SetStateAction<{ visible: boolean; content: React.ReactNode; x: number; y: number }>>;
+  highlightedSurgeLevel: string | null;
+  onToggleOverlay: (key: OverlayKey, value: boolean) => void;
 }) => {
   const [showOverlays, setShowOverlays] = useState(false);
   const [mapDimensions, setMapDimensions] = useState({ width: 0, height: 0 });
@@ -138,7 +144,11 @@ const MapModal = ({
   const { lat, lon } = analysis.centerCoordinates;
   const zoom = analysis.zoomLevel || 5;
   const interactiveMapSrc = `https://maps.google.com/maps?q=${lat},${lon}&z=${zoom}&output=embed&t=k`;
-  const earthLink = `https://earth.google.com/web/@${lat},${lon},635a,22248d,35y,0h,0t,0r`;
+  
+  // Approximate camera distance in meters for Google Earth based on Google Maps zoom level.
+  // This helps provide a sensible 3D starting view.
+  const earthCameraDistance = 40000000 / Math.pow(2, zoom);
+  const earthLink = `https://earth.google.com/web/@${lat},${lon},635a,${earthCameraDistance.toFixed(0)}d,35y,0h,0t,0r`;
 
   const hasStormTrack = analysis?.stormTrack && analysis.stormTrack.length > 0;
   const hasAnomalies = analysis?.anomalyStreaks && analysis.anomalyStreaks.length > 0;
@@ -228,7 +238,7 @@ const MapModal = ({
               )}
               {!hasAnyActiveOverlays && hasAnyOverlayData && (
                 <div className="absolute inset-0 bg-black/50 flex items-center justify-center text-white text-center p-4 rounded-lg">
-                    <p>No analysis layers are currently enabled. <br/> Enable layers in the main view to see them here.</p>
+                    <p>No analysis layers are currently enabled. <br/> Use the controls to enable them.</p>
                 </div>
               )}
               {activeOverlays.showHeatmap && analysis.temperature && <TemperatureHeatmapDisplay temperature={analysis.temperature} />}
@@ -238,6 +248,17 @@ const MapModal = ({
               {activeOverlays.showWind && hasWindField && <WindArrowCanvasOverlay windField={analysis.windField!} dimensions={mapDimensions} />}
               {activeOverlays.showIsobars && hasIsobars && <IsobarDisplay isobars={analysis.isobars!} dimensions={mapDimensions} />}
               {activeOverlays.showWind && hasWindField && <WindLegend setTooltip={setTooltip} />}
+              <div className="absolute top-2 right-2 z-10 bg-gray-900/50 dark:bg-black/40 text-white p-2 rounded-md pointer-events-auto backdrop-blur-sm shadow-lg animate-fade-in text-xs">
+                <h4 className="font-bold mb-1 border-b border-white/30 pb-1">Layers</h4>
+                <div className="space-y-1 mt-2">
+                    {hasStormTrack && <label className="flex items-center gap-2 cursor-pointer p-0.5"><input type="checkbox" checked={activeOverlays.includeStormTrack} onChange={e => onToggleOverlay('includeStormTrack', e.target.checked)} className="h-3.5 w-3.5 rounded bg-gray-500/50 border-white/50 text-cyan-500 focus:ring-cyan-500" /><span>Storm Track</span></label>}
+                    {hasAnomalies && <label className="flex items-center gap-2 cursor-pointer p-0.5"><input type="checkbox" checked={activeOverlays.includeAnomalies} onChange={e => onToggleOverlay('includeAnomalies', e.target.checked)} className="h-3.5 w-3.5 rounded bg-gray-500/50 border-white/50 text-cyan-500 focus:ring-cyan-500" /><span>Anomalies</span></label>}
+                    {hasStormSurge && <label className="flex items-center gap-2 cursor-pointer p-0.5"><input type="checkbox" checked={activeOverlays.includeStormSurge} onChange={e => onToggleOverlay('includeStormSurge', e.target.checked)} className="h-3.5 w-3.5 rounded bg-gray-500/50 border-white/50 text-cyan-500 focus:ring-cyan-500" /><span>Storm Surge</span></label>}
+                    {!!analysis.temperature && <label className="flex items-center gap-2 cursor-pointer p-0.5"><input type="checkbox" checked={activeOverlays.showHeatmap} onChange={e => onToggleOverlay('showHeatmap', e.target.checked)} className="h-3.5 w-3.5 rounded bg-gray-500/50 border-white/50 text-cyan-500 focus:ring-cyan-500" /><span>Heatmap</span></label>}
+                    {hasWindField && <label className="flex items-center gap-2 cursor-pointer p-0.5"><input type="checkbox" checked={activeOverlays.showWind} onChange={e => onToggleOverlay('showWind', e.target.checked)} className="h-3.5 w-3.5 rounded bg-gray-500/50 border-white/50 text-cyan-500 focus:ring-cyan-500" /><span>Wind Field</span></label>}
+                    {hasIsobars && <label className="flex items-center gap-2 cursor-pointer p-0.5"><input type="checkbox" checked={activeOverlays.showIsobars} onChange={e => onToggleOverlay('showIsobars', e.target.checked)} className="h-3.5 w-3.5 rounded bg-gray-500/50 border-white/50 text-cyan-500 focus:ring-cyan-500" /><span>Isobars</span></label>}
+                </div>
+              </div>
             </>
           ) : (
             <iframe
@@ -262,6 +283,7 @@ const MapModal = ({
     </div>
   );
 };
+
 
 const LookerStepsModal = ({ isOpen, onClose }: { isOpen: boolean, onClose: () => void }) => {
   if (!isOpen) return null;
@@ -899,7 +921,7 @@ const AnomalyStreaksDisplay = ({ streaks, dimensions, setTooltip }: {
                         <p className="mt-1 text-sm text-gray-700 dark:text-gray-300">{streak.impact}</p>
                     </div>
                     {streak.detailedAnalysis && (
-                      <div>
+                      <div className="mt-2 pt-2 border-t border-gray-200 dark:border-gray-700">
                           <strong className="text-cyan-600 dark:text-cyan-400 text-sm">Detailed Analysis</strong>
                           <p className="mt-1 text-sm text-gray-700 dark:text-gray-300">{streak.detailedAnalysis}</p>
                       </div>
@@ -2271,6 +2293,16 @@ export default function App() {
     };
   }, [forecastHour]);
 
+  const handleToggleOverlay = (key: OverlayKey, value: boolean) => {
+    switch (key) {
+      case 'showHeatmap': setShowHeatmap(value); break;
+      case 'showWind': setShowWind(value); break;
+      case 'showIsobars': setShowIsobars(value); break;
+      case 'includeStormTrack': setIncludeStormTrack(value); break;
+      case 'includeAnomalies': setIncludeAnomalies(value); break;
+      case 'includeStormSurge': setIncludeStormSurge(value); break;
+    }
+  };
 
   const triggerFileSelect = () => fileInputRef.current?.click();
   const hasStormTrack = analysis?.stormTrack && analysis.stormTrack.length > 0;
@@ -2349,7 +2381,7 @@ export default function App() {
         }
       `}</style>
       <Tooltip visible={tooltip.visible} content={tooltip.content} x={tooltip.x} y={tooltip.y} />
-      <div className="w-full max-w-4xl mx-auto">
+      <div className="w-full max-w-7xl mx-auto">
         <header className="text-center mb-8 relative">
           <h1 className="text-4xl sm:text-5xl font-bold text-cyan-600 dark:text-cyan-400 mb-2">AI Weather Explainer</h1>
           <p className="text-lg text-gray-600 dark:text-gray-400">Upload a satellite image for an expert meteorological analysis and storm tracking.</p>
@@ -2730,6 +2762,7 @@ export default function App() {
         activeOverlays={activeOverlays}
         setTooltip={setTooltip}
         highlightedSurgeLevel={highlightedSurgeLevel}
+        onToggleOverlay={handleToggleOverlay}
       />
       <LookerStepsModal
         isOpen={isLookerModalOpen}
