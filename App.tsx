@@ -2,6 +2,8 @@
 
 
 
+
+
 import React, { useState, useCallback, useRef, useEffect } from 'react';
 import QRCode from 'qrcode';
 import { zlibSync, unzlibSync } from 'fflate';
