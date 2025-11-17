@@ -1,9 +1,3 @@
-
-
-
-
-
-
 import React, { useState, useCallback, useRef, useEffect } from 'react';
 import QRCode from 'qrcode';
 import { zlibSync, unzlibSync } from 'fflate';
@@ -571,6 +565,7 @@ function App() {
                                 src={liveMapUrl}
                                 className="w-full h-full"
                                 title="Live Weather Map"
+                                allow="geolocation; fullscreen"
                             ></iframe>
                         </div>
                          {error && (
