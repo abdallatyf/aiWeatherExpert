@@ -1,7 +1,4 @@
 
-
-
-
 import React, { useState, useCallback, useRef, useEffect } from 'react';
 import { ImageFile } from './types';
 import { explainWeatherFromImage, WeatherAnalysis, StormTrackPoint, AnomalyStreak, generateVisualSummaryImage, StormSurgeForecast, fetchLiveWeatherData, LiveWeatherData, Isobar, WindFieldPoint, fetch5DayForecast, ForecastDayData, refineVisualSummaryImage } from './services/geminiService';
@@ -189,7 +186,7 @@ const MapModal = ({
       aria-labelledby="map-modal-title"
     >
       <div 
-        className="bg-white dark:bg-gray-800 rounded-lg shadow-xl p-6 w-full max-w-4xl relative transform transition-all duration-300 scale-95 opacity-0 animate-fade-in-scale" 
+        className="bg-white dark:bg-gray-800 rounded-lg shadow-xl p-6 w-full max-w-7xl relative transform transition-all duration-300 scale-95 opacity-0 animate-fade-in-scale" 
         onClick={(e) => e.stopPropagation()}
       >
         <button 
@@ -1128,7 +1125,7 @@ const Tooltip = ({ visible, content, x, y }: { visible: boolean; content: React.
 };
 
 const WeatherIcon = ({ icon, className }: { icon: LiveWeatherData['conditionIcon'] | ForecastDayData['conditionIcon'], className?: string }) => {
-    const defaultClass = "h-10 w-10";
+    const defaultClass = "h-8 w-8";
     const finalClass = `${defaultClass} ${className || ''}`;
 
     switch(icon) {
@@ -1252,7 +1249,7 @@ const FiveDayForecastDisplay = ({
           {data.map(day => (
             <div key={day.day} className="p-2 bg-gray-200/50 dark:bg-gray-800/50 rounded-lg flex flex-col items-center">
               <p className="font-bold text-sm text-gray-800 dark:text-gray-200">{day.day}</p>
-              <WeatherIcon icon={day.conditionIcon} className="h-8 w-8 my-1" />
+              <WeatherIcon icon={day.conditionIcon} className="my-1" />
               <p className="text-sm font-semibold text-gray-900 dark:text-gray-100">{day.highTemp}° / {day.lowTemp}°</p>
               <div className="flex items-center gap-1 text-xs text-blue-500 dark:text-blue-300 mt-1" title={`${day.precipChance}% chance of precipitation`}>
                 <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M5.224 10.824a.75.75 0 011.06 0l2.22 2.22a.75.75 0 001.06 0l4.44-4.44a.75.75 0 111.06 1.06l-5 5a.75.75 0 01-1.06 0l-2.75-2.75a.75.75 0 010-1.06z" clipRule="evenodd" /></svg>
@@ -2397,7 +2394,7 @@ export default function App() {
                 <div ref={imageContainerRef} className="relative w-full aspect-video bg-gray-200 dark:bg-gray-800/50 rounded-lg overflow-hidden mb-4 flex items-center justify-center">
                    {(isLoading || isUploading || isRefining) && (
                         <div className="absolute inset-0 bg-gray-900/60 dark:bg-black/50 flex flex-col items-center justify-center z-10 rounded-lg backdrop-blur-sm transition-opacity duration-300 animate-fade-in">
-                            <svg className="animate-spin h-12 w-12 text-cyan-500 dark:text-cyan-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                            <svg className="animate-spin h-10 w-10 text-cyan-500 dark:text-cyan-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                                 <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
                                 <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                             </svg>
@@ -2646,7 +2643,7 @@ export default function App() {
               </div>
             ) : (
               <div className="text-center">
-                <svg className="mx-auto h-12 w-12 text-gray-400 dark:text-gray-500" stroke="currentColor" fill="none" viewBox="0 0 48 48" aria-hidden="true"><path d="M28 8H12a4 4 0 00-4 4v20m32-12v8m0 0v8a4 4 0 01-4 4H12a4 4 0 01-4-4v-4m32-4l-3.172-3.172a4 4 0 00-5.656 0L28 28M8 32l9.172-9.172a4 4 0 015.656 0L28 28m0 0l4 4m4-24h8m-4-4v8" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" /></svg>
+                <svg className="mx-auto h-10 w-10 text-gray-400 dark:text-gray-500" stroke="currentColor" fill="none" viewBox="0 0 48 48" aria-hidden="true"><path d="M28 8H12a4 4 0 00-4 4v20m32-12v8m0 0v8a4 4 0 01-4 4H12a4 4 0 01-4-4v-4m32-4l-3.172-3.172a4 4 0 00-5.656 0L28 28M8 32l9.172-9.172a4 4 0 015.656 0L28 28m0 0l4 4m4-24h8m-4-4v8" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" /></svg>
                 <h3 className="mt-2 text-sm font-medium text-gray-700 dark:text-gray-300">No image selected</h3>
                 <p className="mt-1 text-sm text-gray-500">Get started by uploading an image, using our sample, or pasting a screenshot.</p>
               </div>
@@ -2733,7 +2730,7 @@ export default function App() {
               </div>
               
               <div className="flex-grow">
-                {isLoading && (<div className="flex items-center justify-center h-full"><div className="animate-spin rounded-full h-16 w-16 border-t-2 border-b-2 border-cyan-500 dark:border-cyan-400"></div></div>)}
+                {isLoading && (<div className="flex items-center justify-center h-full"><div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-cyan-500 dark:border-cyan-400"></div></div>)}
                 {error && <div className="text-red-600 dark:text-red-400 bg-red-100 dark:bg-red-900/50 p-3 rounded-md">{error}</div>}
                 {analysis && (<div className="prose dark:prose-invert max-w-none text-gray-700 dark:text-gray-300 whitespace-pre-wrap">{analysis.explanation}</div>)}
                 {!isLoading && !analysis && !error && (<p className="text-gray-500 dark:text-gray-400">Your weather analysis will appear here.</p>)}
