@@ -33,7 +33,13 @@ export async function explainWeatherFromImage(mimeType: string, imageData: strin
         };
 
         // --- Step 1: Get Textual Analysis from Gemini Flash ---
-        const textAnalysisPrompt = `You are an expert meteorologist. Provide a detailed, clear explanation of the weather patterns in this satellite image. Describe cloud formations, potential storm activity (like hurricanes or thunderstorms), wind direction, and the overall weather conditions. Be thorough.`;
+        const textAnalysisPrompt = `You are an expert meteorologist. Provide a detailed, clear explanation of the weather patterns in this satellite image. 
+        
+Include the following in your analysis:
+1.  **General Conditions:** Describe cloud formations, potential storm activity (hurricanes, thunderstorms), and wind direction.
+2.  **Precipitation Probability:** Assess the likelihood of rain, snow, or hail in visible cloud masses based on density and structure.
+3.  **Humidity Levels:** Estimate relative humidity levels (Low, Moderate, High) in key regions based on visual cues like haze, cloud cover, and clarity.
+4.  **Summary:** A brief concluding thought on the overall weather impact.`;
         
         const textResponsePromise = ai.models.generateContent({
             model: 'gemini-2.5-flash',
@@ -45,8 +51,9 @@ export async function explainWeatherFromImage(mimeType: string, imageData: strin
 *   Arrows to indicate primary wind directions.
 *   Isobars (lines of equal pressure) if applicable.
 *   Highlighting of significant storm cells or weather fronts.
-*   If there's a hurricane or cyclone, draw its projected path with points indicating future positions and strength.
-*   Label key features.`;
+*   **Precipitation:** Draw Rain drops 💧 or Snow flakes ❄️ icons over areas with likely precipitation.
+*   **Humidity:** Use small droplet icons or shading to indicate areas of high moisture/humidity.
+*   If there's a hurricane or cyclone, draw its projected path.`;
 
         const visualResponsePromise = ai.models.generateContent({
             model: 'gemini-2.5-flash-image',
@@ -143,10 +150,10 @@ export async function analyzeWeatherMotion(
 
         // --- Step 1: Get Textual Motion Analysis ---
         const textAnalysisPrompt = `You are an expert meteorologist. Analyze the motion and changes between these two satellite images, which are sequential in time (Image 1 is the start, Image 2 is the end). Provide a detailed analysis covering:
-1.  **Movement:** Describe the direction and estimated speed of the primary weather system (e.g., hurricane, storm front).
-2.  **Intensity Change:** Has the system intensified or weakened? Look for changes in cloud top temperature, structure, and rotation.
-3.  **Structural Change:** Describe any changes in the storm's size, shape, or features like the eye-wall or rain bands.
-4.  **Forecast:** Based on the observed motion and changes, provide a short-term forecast of its likely path and intensity development.`;
+1.  **Movement:** Describe the direction and estimated speed of the primary weather system.
+2.  **Intensity Change:** Has the system intensified or weakened?
+3.  **Precipitation & Humidity:** Note any spreading of rain bands or changes in moisture density visible between the two frames.
+4.  **Forecast:** Based on the observed motion, provide a short-term forecast.`;
         
         const textResponsePromise = ai.models.generateContent({
             model: 'gemini-2.5-flash',
@@ -154,11 +161,11 @@ export async function analyzeWeatherMotion(
         });
 
         // --- Step 2: Get Visual Motion Summary ---
-        const visualSummaryPrompt = `You are an expert meteorologist. Generate a new image that visually summarizes the motion between the two provided satellite images. This new image must be the same size as the originals. On the SECOND image, draw meteorological symbols and annotations to illustrate the changes:
-*   Use bold arrows to show the primary direction of movement of the storm's center or key features.
-*   Draw a projected path line extending from the storm's current position.
-*   Use color-coding or symbols to highlight areas of significant intensification (e.g., red circles) or weakening (e.g., blue circles).
-*   Outline the storm's position from the FIRST image as a faint, dashed line on top of the second image to clearly show the displacement.`;
+        const visualSummaryPrompt = `You are an expert meteorologist. Generate a new image that visually summarizes the motion between the two provided satellite images. This new image must be the same size as the originals. On the SECOND image, draw meteorological symbols:
+*   Use bold arrows to show direction.
+*   Projected path lines.
+*   **Mark areas of heavy precipitation with Rain/Snow icons.**
+*   Outline the storm's position from the FIRST image as a faint dashed line.`;
 
         const visualResponsePromise = ai.models.generateContent({
             model: 'gemini-2.5-flash-image',
