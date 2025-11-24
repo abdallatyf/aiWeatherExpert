@@ -54,6 +54,12 @@ const BookmarkIcon: React.FC<{ className?: string }> = ({ className }) => (
     </svg>
 );
 
+const TrashIcon: React.FC<{ className?: string }> = ({ className }) => (
+    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className={className}>
+        <path strokeLinecap="round" strokeLinejoin="round" d="m14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0" />
+    </svg>
+);
+
 const ArrowUturnLeftIcon: React.FC<{ className?: string }> = ({ className }) => (
     <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className={className}>
         <path strokeLinecap="round" strokeLinejoin="round" d="M9 15 3 9m0 0 6-6M3 9h12a6 6 0 0 1 0 12h-3" />
@@ -393,6 +399,8 @@ const DEFAULT_MAP_URL = 'https://zoom.earth/maps/satellite/#view=7.389094,124.06
 export default function App() {
     const [mode, setMode] = useState<AppMode>('home');
     const [imageFile, setImageFile] = useState<ImageFile | null>(null);
+    const [imageFile1, setImageFile1] = useState<ImageFile | null>(null);
+    const [imageFile2, setImageFile2] = useState<ImageFile | null>(null);
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [analysisResult, setAnalysisResult] = useState<AnalysisResult | null>(null);
@@ -416,6 +424,8 @@ export default function App() {
     const [offlineSnapshot, setOfflineSnapshot] = useState<string | null>(null);
 
     const fileInputRef = useRef<HTMLInputElement>(null);
+    const fileInput1Ref = useRef<HTMLInputElement>(null);
+    const fileInput2Ref = useRef<HTMLInputElement>(null);
     const iframeLoadTimeoutRef = useRef<number | null>(null);
     const iframeRef = useRef<HTMLIFrameElement>(null);
 
@@ -434,6 +444,20 @@ export default function App() {
             }
         });
     }, [error]);
+
+    const deleteAnalysis = useCallback((id: string) => {
+        if (window.confirm("Are you sure you want to delete this analysis?")) {
+            setSavedAnalyses(prev => {
+                const updated = prev.filter(a => a.id !== id);
+                try {
+                    localStorage.setItem('savedAnalyses', JSON.stringify(updated));
+                } catch (e) {
+                    console.error("Failed to update localStorage after deletion", e);
+                }
+                return updated;
+            });
+        }
+    }, []);
 
     useEffect(() => {
         try {
@@ -485,6 +509,9 @@ export default function App() {
         setAnalysisResult(null);
         setIsCropping(false);
         setCapturedImageBase64(null);
+        setImageFile(null);
+        setImageFile1(null);
+        setImageFile2(null);
     };
 
     const handleImageFileChange = (
@@ -530,6 +557,30 @@ export default function App() {
         };
         analysisFn();
     }, [imageFile]);
+
+    const handleMotionSubmit = useCallback(async (e: React.FormEvent<HTMLFormElement>) => {
+        e.preventDefault();
+        if (!imageFile1 || !imageFile2) return setError("Please upload both images.");
+        const analysisFn = async () => {
+            setIsLoading(true);
+            setError(null);
+            try {
+                const result = await analyzeWeatherMotion(imageFile1.mimeType, imageFile1.base64, imageFile2.mimeType, imageFile2.base64);
+                setAnalysisResult(result);
+                setActiveAnalysis({
+                    id: Date.now().toString(),
+                    date: new Date().toISOString().split('T')[0],
+                    originalImage: { base64: imageFile2.base64, mimeType: imageFile2.mimeType },
+                    ...result,
+                });
+                setMode('viewing');
+            } catch (err) {
+                setError(err instanceof Error ? err.message : "An unknown error occurred.");
+                setLastFailedAction(() => analysisFn);
+            } finally { setIsLoading(false); }
+        };
+        analysisFn();
+    }, [imageFile1, imageFile2]);
 
     const onDateChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         setSelectedDate(e.target.value);
@@ -692,11 +743,12 @@ export default function App() {
             {mode === 'home' && (
                  <div className="flex flex-col items-center justify-center min-h-screen p-4 space-y-8">
                     <h1 className="text-4xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-blue-400 to-purple-600">Gemini Weather Analyst</h1>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6 max-w-4xl w-full">
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 max-w-6xl w-full">
                         <button onClick={() => setMode('upload')} className="bg-gray-800 p-6 rounded-xl hover:bg-gray-750 transition-all border border-gray-700 hover:border-purple-500 group"><UploadIcon /><h3 className="mt-4 text-xl font-semibold text-white group-hover:text-purple-400">Upload Image</h3><p className="mt-2 text-gray-400">Analyze a satellite image from your device.</p></button>
                         <button onClick={() => setMode('webCapture')} className="bg-gray-800 p-6 rounded-xl hover:bg-gray-750 transition-all border border-gray-700 hover:border-purple-500 group"><ComputerDesktopIcon className="w-12 h-12 mx-auto text-gray-500" /><h3 className="mt-4 text-xl font-semibold text-white group-hover:text-purple-400">Live Map</h3><p className="mt-2 text-gray-400">Capture and analyze live weather maps.</p></button>
                         <button onClick={() => setMode('historical')} className="bg-gray-800 p-6 rounded-xl hover:bg-gray-750 transition-all border border-gray-700 hover:border-purple-500 group"><CalendarDaysIcon className="w-12 h-12 mx-auto text-gray-500" /><h3 className="mt-4 text-xl font-semibold text-white group-hover:text-purple-400">Historical Data</h3><p className="mt-2 text-gray-400">Analyze past weather events (Demo).</p></button>
                         <button onClick={() => setMode('motion')} className="bg-gray-800 p-6 rounded-xl hover:bg-gray-750 transition-all border border-gray-700 hover:border-purple-500 group"><FilmIcon className="w-12 h-12 mx-auto text-gray-500" /><h3 className="mt-4 text-xl font-semibold text-white group-hover:text-purple-400">Motion Analysis</h3><p className="mt-2 text-gray-400">Compare two images to track movement.</p></button>
+                        <button onClick={() => setMode('saved')} className="bg-gray-800 p-6 rounded-xl hover:bg-gray-750 transition-all border border-gray-700 hover:border-purple-500 group"><BookmarkIcon className="w-12 h-12 mx-auto text-gray-500" /><h3 className="mt-4 text-xl font-semibold text-white group-hover:text-purple-400">Saved Analyses</h3><p className="mt-2 text-gray-400">View your saved weather reports.</p></button>
                     </div>
                  </div>
             )}
@@ -740,9 +792,49 @@ export default function App() {
                 </div>
             )}
             {mode === 'webCapture' && renderWebCapture()}
+            {mode === 'saved' && (
+                <div className="flex flex-col h-full">
+                    {renderHeader("Saved Analyses")}
+                    <div className="flex-grow p-4 overflow-auto">
+                        {savedAnalyses.length === 0 ? (
+                            <div className="flex flex-col items-center justify-center h-full text-gray-500">
+                                <BookmarkIcon className="w-16 h-16 mb-4 opacity-50" />
+                                <p>No saved analyses yet.</p>
+                            </div>
+                        ) : (
+                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 max-w-7xl mx-auto">
+                                {savedAnalyses.map((analysis) => (
+                                    <div key={analysis.id} className="bg-gray-800 rounded-xl border border-gray-700 overflow-hidden flex flex-col hover:border-gray-500 transition-colors">
+                                        <div className="relative h-48 bg-black">
+                                            <img src={`data:${analysis.originalImage.mimeType};base64,${analysis.originalImage.base64}`} alt="Thumbnail" className="w-full h-full object-cover opacity-80" />
+                                            <div className="absolute top-2 right-2 bg-black/60 px-2 py-1 rounded text-xs text-white">{analysis.date}</div>
+                                        </div>
+                                        <div className="p-4 flex-grow flex flex-col justify-between">
+                                            <p className="text-gray-300 line-clamp-3 text-sm mb-4">{analysis.explanation}</p>
+                                            <div className="flex gap-2 mt-auto">
+                                                <button onClick={() => { setActiveAnalysis(analysis); setMode('viewing'); }} className="flex-1 py-2 bg-indigo-600 hover:bg-indigo-700 rounded text-white text-sm font-medium transition-colors">View</button>
+                                                <button onClick={() => deleteAnalysis(analysis.id)} className="px-3 py-2 bg-gray-700 hover:bg-red-900/50 hover:text-red-400 rounded text-gray-300 transition-colors" title="Delete"><TrashIcon className="w-5 h-5" /></button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+                    </div>
+                </div>
+            )}
             {mode === 'motion' && (
                  <div className="flex flex-col h-full">{renderHeader("Motion Analysis")}
-                     <div className="flex-grow flex items-center justify-center p-4"><p className="text-gray-500">Motion analysis UI pending implementation.</p></div>
+                     <div className="flex-grow flex items-center justify-center p-4">
+                        <form onSubmit={handleMotionSubmit} className="w-full max-w-4xl space-y-6">
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                <ImageUploader imageFile={imageFile1} onImageChange={(e) => handleImageFileChange(e, setImageFile1, fileInput1Ref)} title="First Image" id="upload-motion-1" inputRef={fileInput1Ref} />
+                                <ImageUploader imageFile={imageFile2} onImageChange={(e) => handleImageFileChange(e, setImageFile2, fileInput2Ref)} title="Second Image" id="upload-motion-2" inputRef={fileInput2Ref} />
+                            </div>
+                            <button type="submit" disabled={isLoading} className="w-full py-3 bg-indigo-600 hover:bg-indigo-700 rounded-lg font-bold text-white transition-colors disabled:opacity-50">{isLoading ? 'Analyzing Motion...' : 'Analyze Movement'}</button>
+                            {error && <p className="text-red-400 text-center">{error}</p>}
+                        </form>
+                     </div>
                 </div>
             )}
             {showPermissionModal && <PermissionModal onCancel={() => setShowPermissionModal(false)} onConfirm={handleStartCapture} />}
