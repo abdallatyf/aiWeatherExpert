@@ -1,8 +1,9 @@
+
 import React, { useState, useCallback, useRef, useEffect } from 'react';
 import { ImageFile, AnalysisResult, SavedAnalysis, StorableImage } from './types';
 import { explainWeatherFromImage, analyzeWeatherMotion } from './services/geminiService';
 import { HISTORICAL_IMAGE_MIMETYPE, HISTORICAL_IMAGE_BASE64 } from './historicalImageData';
-import { unzlibSync } from 'fflate';
+import { unzlibSync, zlibSync } from 'fflate';
 
 // --- Helper Components defined inside App.tsx to reduce file count ---
 
@@ -42,6 +43,12 @@ const ShareIcon: React.FC<{ className?: string }> = ({ className }) => (
     </svg>
 );
 
+const CheckIcon: React.FC<{ className?: string }> = ({ className }) => (
+    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className={className}>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
+    </svg>
+);
+
 const XMarkIcon: React.FC<{ className?: string }> = ({ className }) => (
     <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className={className}>
         <path strokeLinecap="round" strokeLinejoin="round" d="M6 18 18 6M6 6l12 12" />
@@ -75,6 +82,12 @@ const ArrowUturnRightIcon: React.FC<{ className?: string }> = ({ className }) =>
 const ArrowPathIcon: React.FC<{ className?: string }> = ({ className }) => (
     <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className={className}>
         <path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0 3.181 3.183a8.25 8.25 0 0 0 11.667 0l3.181-3.183m-4.991-2.691v4.992h-4.992m0 0-3.181-3.183a8.25 8.25 0 0 1 11.667 0l3.181 3.183" />
+    </svg>
+);
+
+const ArrowTopRightOnSquareIcon: React.FC<{ className?: string }> = ({ className }) => (
+    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className={className}>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M13.5 6H5.25A2.25 2.25 0 0 0 3 8.25v10.5A2.25 2.25 0 0 0 5.25 21h10.5A2.25 2.25 0 0 0 18 18.75V10.5m-10.5 6L21 3m0 0h-5.25M21 3v5.25" />
     </svg>
 );
 
@@ -422,6 +435,9 @@ export default function App() {
     // Offline Support State
     const [isOnline, setIsOnline] = useState(navigator.onLine);
     const [offlineSnapshot, setOfflineSnapshot] = useState<string | null>(null);
+    
+    // Sharing State
+    const [shareUrlCopied, setShareUrlCopied] = useState(false);
 
     const fileInputRef = useRef<HTMLInputElement>(null);
     const fileInput1Ref = useRef<HTMLInputElement>(null);
@@ -458,6 +474,30 @@ export default function App() {
             });
         }
     }, []);
+    
+    const handleShare = async () => {
+        if (!activeAnalysis) return;
+        try {
+            const jsonString = JSON.stringify(activeAnalysis);
+            const encoded = new TextEncoder().encode(jsonString);
+            const compressed = zlibSync(encoded);
+            let binary = '';
+            for (let i = 0; i < compressed.length; i++) {
+                binary += String.fromCharCode(compressed[i]);
+            }
+            const base64 = btoa(binary);
+            const url = new URL(window.location.href);
+            url.search = ''; 
+            url.searchParams.set('data', base64);
+            
+            await navigator.clipboard.writeText(url.toString());
+            setShareUrlCopied(true);
+            setTimeout(() => setShareUrlCopied(false), 2000);
+        } catch (e) {
+            console.error("Share error", e);
+            setError("Failed to create share link. Data may be too large.");
+        }
+    };
 
     useEffect(() => {
         try {
@@ -501,8 +541,13 @@ export default function App() {
         if (['upload', 'historical', 'saved', 'webCapture', 'motion'].includes(mode)) {
             setMode('home');
         } else if (mode === 'viewing' || mode === 'sharing') {
-            const previousMode = activeAnalysis?.originalImage.base64 === HISTORICAL_IMAGE_BASE64 ? 'historical' : 'upload';
-            setMode(previousMode as AppMode);
+             const isSavedItem = activeAnalysis && savedAnalyses.some(a => a.id === activeAnalysis.id);
+             if (isSavedItem) {
+                setMode('saved');
+             } else {
+                const previousMode = activeAnalysis?.originalImage.base64 === HISTORICAL_IMAGE_BASE64 ? 'historical' : 'upload';
+                setMode(previousMode as AppMode);
+             }
         }
         setError(null);
         setLastFailedAction(null);
@@ -534,6 +579,10 @@ export default function App() {
         }
     };
 
+    const performAnalysis = useCallback(async (mimeType: string, base64: string): Promise<AnalysisResult> => {
+        return await explainWeatherFromImage(mimeType, base64);
+    }, []);
+
     const handleUploadSubmit = useCallback(async (e: React.FormEvent<HTMLFormElement>) => {
         e.preventDefault();
         if (!imageFile) return setError("Please select an image file first.");
@@ -541,7 +590,7 @@ export default function App() {
             setIsLoading(true);
             setError(null);
             try {
-                const result = await explainWeatherFromImage(imageFile.mimeType, imageFile.base64);
+                const result = await performAnalysis(imageFile.mimeType, imageFile.base64);
                 setAnalysisResult(result);
                 setActiveAnalysis({
                     id: Date.now().toString(),
@@ -556,7 +605,7 @@ export default function App() {
             } finally { setIsLoading(false); }
         };
         analysisFn();
-    }, [imageFile]);
+    }, [imageFile, performAnalysis]);
 
     const handleMotionSubmit = useCallback(async (e: React.FormEvent<HTMLFormElement>) => {
         e.preventDefault();
@@ -784,8 +833,26 @@ export default function App() {
                         <div className="max-w-6xl mx-auto grid grid-cols-1 lg:grid-cols-2 gap-8">
                             <div><ImageViewer original={activeAnalysis.originalImage} summary={{ base64: activeAnalysis.visualSummary, mimeType: activeAnalysis.visualSummaryMimeType }} /></div>
                             <div className="space-y-6">
-                                 <div className="bg-gray-800 p-6 rounded-xl border border-gray-700"><h2 className="text-2xl font-bold mb-4 flex items-center"><SparklesIcon className="w-6 h-6 mr-2 text-yellow-400" /> AI Interpretation</h2><div className="prose prose-invert max-w-none whitespace-pre-wrap text-gray-300">{activeAnalysis.explanation}</div></div>
-                                 <div className="flex gap-4"><button onClick={() => saveAnalysis(activeAnalysis)} className="flex-1 py-3 bg-gray-700 hover:bg-gray-600 rounded-lg text-white font-medium flex items-center justify-center gap-2"><BookmarkIcon className="w-5 h-5" /> Save</button><button onClick={() => {}} className="flex-1 py-3 bg-indigo-600 hover:bg-indigo-700 rounded-lg text-white font-medium flex items-center justify-center gap-2"><ShareIcon className="w-5 h-5" /> Share</button></div>
+                                 <div className="bg-gray-800 p-6 rounded-xl border border-gray-700">
+                                     <h2 className="text-2xl font-bold mb-4 flex items-center"><SparklesIcon className="w-6 h-6 mr-2 text-yellow-400" /> AI Interpretation</h2>
+                                     <div className="prose prose-invert max-w-none whitespace-pre-wrap text-gray-300">{activeAnalysis.explanation}</div>
+                                     <div className="mt-6 pt-4 border-t border-gray-700 flex items-center justify-between text-xs text-gray-500">
+                                          <div className="flex items-center gap-2">
+                                            <span>Model Version:</span>
+                                            <span className="font-mono bg-black/30 px-2 py-0.5 rounded text-indigo-300">gemini-2.5-flash</span>
+                                          </div>
+                                          <a href="https://ai.google.dev/gemini-api/docs/models/gemini" target="_blank" rel="noopener noreferrer" className="flex items-center hover:text-white transition-colors">
+                                             Model Documentation <ArrowTopRightOnSquareIcon className="w-3 h-3 ml-1" />
+                                          </a>
+                                     </div>
+                                 </div>
+                                 <div className="flex gap-4">
+                                     <button onClick={() => saveAnalysis(activeAnalysis)} className="flex-1 py-3 bg-gray-700 hover:bg-gray-600 rounded-lg text-white font-medium flex items-center justify-center gap-2"><BookmarkIcon className="w-5 h-5" /> Save</button>
+                                     <button onClick={handleShare} className="flex-1 py-3 bg-indigo-600 hover:bg-indigo-700 rounded-lg text-white font-medium flex items-center justify-center gap-2">
+                                        {shareUrlCopied ? <CheckIcon className="w-5 h-5" /> : <ShareIcon className="w-5 h-5" />}
+                                        {shareUrlCopied ? "Copied Link!" : "Share"}
+                                     </button>
+                                 </div>
                             </div>
                         </div>
                     </div>

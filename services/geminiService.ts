@@ -37,9 +37,10 @@ export async function explainWeatherFromImage(mimeType: string, imageData: strin
         
 Include the following in your analysis:
 1.  **General Conditions:** Describe cloud formations, potential storm activity (hurricanes, thunderstorms), and wind direction.
-2.  **Precipitation Probability:** Assess the likelihood of rain, snow, or hail in visible cloud masses based on density and structure.
-3.  **Humidity Levels:** Estimate relative humidity levels (Low, Moderate, High) in key regions based on visual cues like haze, cloud cover, and clarity.
-4.  **Summary:** A brief concluding thought on the overall weather impact.`;
+2.  **Upper Atmosphere:** Analyze upper atmosphere conditions, such as jet streams and high-altitude cloud types (e.g., cirrus), if discernible.
+3.  **Precipitation Probability:** Assess the likelihood of rain, snow, or hail in visible cloud masses based on density and structure.
+4.  **Humidity Levels:** Estimate relative humidity levels (Low, Moderate, High) in key regions based on visual cues like haze, cloud cover, and clarity.
+5.  **Summary:** A brief concluding thought on the overall weather impact.`;
         
         const textResponsePromise = ai.models.generateContent({
             model: 'gemini-2.5-flash',
